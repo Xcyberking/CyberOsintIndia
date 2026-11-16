@@ -1,4 +1,3 @@
-"use server";
 import Link from "next/link";
 import {signIn,signInWithGoogle} from "@/app/auth/actions";
 export default async function Login({searchParams}:{searchParams:Promise<{error?:string;message?:string}>}){
