@@ -2,41 +2,58 @@
 
 Mobile-first dark/neon-blue OSINT platform for ethical research and authorized security work.
 
-## Features implemented in the repository
-- Responsive CyberX landing page, tools directory, dark/light theme toggle.
-- Supabase email/password signup, login, logout, Google OAuth flow, password reset and auth callback.
-- User dashboard, profile page, credit ledger and recent search history.
-- Admin-only dashboard with user listing, credit adjustments and tool enable/disable/price controls.
-- Atomic credit deduction through a database function; admins have unlimited tool credits.
-- Referral codes, verified-email referral claim workflow and reward ledger.
-- Admin health/configuration status endpoint and UI.
-- Working public IP metadata, DNS A/AAAA resolution, email syntax check, E.164 phone-format check, basic URL structure check.
-- Image metadata reader for user-provided images; GPS/location fields are intentionally excluded.
-- PDF export for lookup results.
-- GitHub Actions build workflow.
+## Implemented features
+- Responsive landing page, tools directory, dark/light theme.
+- Supabase email/password signup, login, logout, Google OAuth flow and password reset.
+- User dashboard, profile, credit ledger, search history and referrals.
+- Admin dashboard: user listing, credit adjustments, tool enable/disable and credit cost.
+- Atomic tool credit deduction; admin accounts have unlimited tool credits.
+- Admin settings: public contact links and announcement create/hide/delete.
+- Provider environment-variable presence dashboard (never displays secret values).
+- Public IP metadata lookup (approximate), DNS A/AAAA/MX/TXT/NS/CAA/SOA lookup.
+- Email syntax and E.164 phone-format validation.
+- Basic URL structure check (not a malware verdict).
+- Privacy-filtered image metadata reader; GPS fields are intentionally excluded.
+- PDF export.
+- Daily Vercel Cron health probes for IP metadata and public DNS, stored in Supabase.
+- GitHub Actions production build workflow.
 
-## Setup
-1. Use Node.js 20+ and run `npm install`.
-2. Copy `.env.example` to `.env.local`.
-3. Set `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, and `NEXT_PUBLIC_SITE_URL`.
-4. Run `supabase/schema.sql` in the Supabase SQL Editor.
-5. Then run `supabase/referrals.sql` to enable referral codes and add the image metadata tool.
-6. In Supabase Auth, set the site URL and add `/auth/callback` to allowed redirect URLs.
-7. To enable Google sign-in, configure Google under Supabase Authentication → Providers and add the Supabase callback URL in Google Cloud.
-8. Register your account and confirm its email.
-9. Replace `YOUR_VERIFIED_EMAIL` in `supabase/ADMIN_SETUP.sql` with your verified account email and run that SQL once.
-10. Run `npm run dev`.
+## Deploy to Vercel
+1. Import this repository into Vercel and select the Next.js framework.
+2. In Vercel → Project → Settings → Environment Variables, set:
+   - `NEXT_PUBLIC_SUPABASE_URL`
+   - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+   - `NEXT_PUBLIC_SITE_URL` (your production site URL)
+   - `SUPABASE_SERVICE_ROLE_KEY` (server-only; required only for scheduled health history)
+   - `CRON_SECRET` (random long secret; required for scheduled health history)
+3. Never prefix the service-role key or CRON_SECRET with `NEXT_PUBLIC_`. Never place them in client-side code.
+4. Run the Supabase SQL files in this order:
+   - `supabase/schema.sql`
+   - `supabase/referrals.sql`
+   - `supabase/feature_expansion.sql`
+   - Replace `YOUR_VERIFIED_EMAIL` in `supabase/ADMIN_SETUP.sql` with your verified account email and run it once.
+5. In Supabase Auth → URL Configuration, set the production Site URL and add `https://YOUR-DOMAIN/auth/callback` to Redirect URLs.
+6. For Google login, configure Google under Supabase Authentication → Providers and add the Supabase callback URL to Google Cloud OAuth client.
+7. Redeploy the Vercel project after adding environment variables. Vercel Cron is configured in `vercel.json` to call `/api/cron/health` daily at 06:00 UTC.
+8. After deployment, register, verify your email, and use the admin SQL setup to grant your account admin access.
 
-## Tool behavior and limitations
-- IP lookup uses the public ipwho.is service and returns approximate network/geolocation metadata, not a person's precise location.
-- Domain/DNS lookup resolves public A/AAAA records via the server DNS resolver.
-- Email and phone tools validate syntax/format only. They do not confirm inbox ownership, identify subscribers or locate people.
-- URL Safety Check validates URL structure only; it is not a malware/reputation verdict.
-- Image metadata accepts user-uploaded files up to 10 MB and deliberately excludes GPS fields.
-- Username search and advanced social-profile discovery are not enabled.
-- PDF export contains the current tool result.
-- Health monitor runs live IP-provider and DNS probes when an admin opens the page; it is not a background monitor.
-- Google OAuth, payments, custom API-provider editor, advanced DNS record types and full username discovery require separate provider configuration/integration and are not claimed as live.
+## Vercel environment variable details
+- Required for normal app/auth: `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `NEXT_PUBLIC_SITE_URL`.
+- Required only for daily background health history: `SUPABASE_SERVICE_ROLE_KEY`, `CRON_SECRET`.
+- Provider variables shown in Admin → Settings are informational placeholders only unless a provider integration is explicitly implemented. Adding a key does not automatically activate a provider.
+
+## Limitations / not activated
+- No payment gateway is connected. Payment processing requires a suitable provider, merchant verification and a reviewed checkout/webhook integration. Do not mark credits as paid based only on a browser redirect.
+- Username discovery / cross-platform people search is not included; no private-account scraping or personal tracking.
+- URL checker performs structure inspection only; it does not provide malware or reputation verdicts.
+- Email/phone tools validate format only; they do not verify ownership, identify subscribers or locate people.
+- IP lookup returns approximate network metadata, not a person's precise location.
+- Vercel Cron history requires the two server-only environment variables and the SQL migration above. On a free Vercel plan, Cron scheduling is subject to the plan's supported schedule frequency.
+- Google OAuth requires external Supabase/Google configuration.
+- Image metadata supports user-uploaded images up to 10 MB and excludes GPS fields.
+
+## Local development
+Use Node.js 20+, install dependencies with `npm install`, copy `.env.example` to `.env.local`, then run `npm run dev`.
 
 ## Security
 - Never expose service-role keys or provider secrets in client code.
