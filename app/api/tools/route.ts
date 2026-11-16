@@ -37,7 +37,9 @@ export async function POST(req:Request){
  const supabase=await createClient();const {data:{user}}=await supabase.auth.getUser();if(!user)return NextResponse.json({error:"Please log in."},{status:401});
  const {tool,input}=parsed.data;const summary=input.slice(0,120);let result:any;
  try{
-  if(!builtIn.includes(tool)){const api=await runCustomApi(supabase,tool,input);result=api;}
+  const {data:configuredApi}=await supabase.from("site_settings").select("key").eq("key","tool_api_"+tool).maybeSingle();
+  if(configuredApi){const api=await runCustomApi(supabase,tool,input);result=api;}
+  else if(!builtIn.includes(tool)){throw new Error("This tool has no API connection configured.");}
   else if(tool==="email-validator"){const [local,domain]=input.split("@");const ok=!!local&&!!domain&&/^[^\s@]+$/.test(local)&&/^[a-z0-9.-]+\.[a-z]{2,}$/i.test(domain);result={valid:ok,syntax:ok?"valid":"invalid",note:"Syntax only; no mailbox probing."};}
   else if(tool==="phone-validator"){const clean=input.replace(/[\s()-]/g,"");const ok=/^\+[1-9]\d{7,14}$/.test(clean);result={valid:ok,normalized:ok?clean:null,note:"Format only; no subscriber identity or location is retrieved."};}
   else if(tool==="domain-lookup"||tool==="dns-lookup"){const host=input.toLowerCase().replace(/^https?:\/\//,"").split("/")[0];if(!validDomain(host))return NextResponse.json({error:"Enter a valid public domain name."},{status:400});const [a,aaaa,mx,txt,ns,caa,soa]=await Promise.all([safeResolve(()=>resolve4(host)),safeResolve(()=>resolve6(host)),safeResolve(()=>resolveMx(host)),safeResolve(()=>resolveTxt(host)),safeResolve(()=>resolveNs(host)),safeResolve(()=>resolveCaa(host)),safeResolve(()=>resolveSoa(host))]);result={domain:host,records:{A:a,AAAA:aaaa,MX:mx,TXT:txt,NS:ns,CAA:caa,SOA:soa},note:"Public DNS records. Missing record types are returned as null."};}
