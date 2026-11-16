@@ -1,6 +1,92 @@
-import Link from "next/link";
-import ThemeToggle from "./ThemeToggle";
-import AuthActions from "@/components/AuthActions";
-import { Shield, Search, Globe2, Mail, Phone, Image, Database, ArrowUpRight, LockKeyhole, Zap, Activity, Github, Send } from "lucide-react";
-const tools=[["IP Lookup","Public IP and network metadata",Globe2],["Email Validator","Email syntax and domain validation",Mail],["Phone Validator","Country code and number format",Phone],["Domain Lookup","Public domain information",Search],["DNS Lookup","Public DNS records",Database],["Image Metadata","Metadata from your own images",Image],["URL Structure Check","Basic URL structure inspection",Shield]] as const;
-export default function Home(){return <main><header className="top"><Link href="/" className="brand"><span className="logo"><Shield/></span><span><b>CyberX <i>OSINT</i></b><small>Open Source Intelligence Tools</small></span></Link><nav><a href="#home">Home</a><Link href="/tools">Tools</Link><Link href="/dashboard">Dashboard</Link><Link href="/credits">Credits</Link><a href="#about">About</a><Link href="/announcements">Announcements</Link><Link href="/contact">Contact</Link></nav><div className="actions"><ThemeToggle/><AuthActions/></div></header><section className="hero" id="home"><div className="copy"><span className="eyebrow"><LockKeyhole size={13}/> ETHICAL RESEARCH PLATFORM</span><h1>Explore. Investigate.<br/><em>Discover.</em></h1><p>A focused collection of public-information tools for ethical research, learning, and authorized security analysis.</p><div className="buttons"><Link href="/tools" className="primary big"><Search size={18}/> Explore Tools <ArrowUpRight/></Link><a href="#about" className="ghost big">How it works</a></div><div className="trust"><span><Shield/> Privacy-conscious</span><span><Zap/> Fast workflows</span><span><Activity/> Clear results</span></div></div><div className="visual"><div className="globe"><Globe2/></div><div className="orbit"></div><div className="console"><b><span className="dot"></span> LIVE RESEARCH CONSOLE</b><hr/><hr/><hr/><small>SECURE WORKSPACE <strong>READY</strong></small></div><label>PUBLIC DATA ONLY</label></div></section><section className="section" id="tools"><div className="heading"><div><span className="eyebrow">RESEARCH WORKSPACE</span><h2>Powerful OSINT <em>Tools</em></h2><p>Choose a tool to start a focused, transparent lookup.</p></div><Link href="/tools">View all tools <ArrowUpRight/></Link></div><div className="grid">{tools.map(([name,desc,Icon])=><Link href="/tools" className="card" key={name}><span className="icon"><Icon/></span><span><b>{name}</b><small>{desc}</small><label>EXPLORE TOOL</label></span><ArrowUpRight className="arrow"/></Link>)}</div></section><section className="about section" id="about"><div className="shield"><Shield/><LockKeyhole/></div><div><span className="eyebrow">BUILT FOR RESPONSIBLE RESEARCH</span><h2>Clarity, control &<br/><em>confidence.</em></h2><p>CyberX OSINT organizes public data checks into simple workflows. Results will include source-aware labels, timestamps, and clear limitations.</p><ul><li>Public and authorized data sources</li><li>Server-side secrets and access controls</li><li>Usage history and transparent errors</li><li>User-owned account and credit records</li></ul></div></section><section className="cta"><div><span className="eyebrow">START YOUR WORKSPACE</span><h2>Research responsibly.<br/><em>Stay informed.</em></h2></div><AuthActions cta/></section><footer id="contact"><div className="brand"><span className="logo"><Shield/></span><span><b>CyberX <i>OSINT</i></b><small>Explore more. Be responsible.</small></span></div><p>For education and authorized research. Respect privacy, applicable laws, and platform terms.</p><div className="footer-links"><a href="/contact">Contact channels</a><a href="/announcements">Announcements</a></div><div className="social"><a href="https://github.com/Xcyberking/CyberOsintIndia"><Github/></a><a href="#"><Send/></a></div><small>© 2026 CyberX OSINT · Educational and ethical use only.</small></footer></main>;}
+import Link from 'next/link';
+import AuthActions from '@/components/AuthActions';
+import { createPublicClient } from '@/lib/supabase/public';
+import { Shield, Search, ArrowUpRight, LockKeyhole, Zap, Activity, Github, Wrench, ShieldCheck, Check } from 'lucide-react';
+
+export const revalidate = 60;
+
+type ToolRow = { slug: string; name: string; description: string; category: string; credit_cost: number };
+
+async function loadTools(): Promise<ToolRow[]> {
+  try {
+    const db = createPublicClient();
+    const { data } = await db.from('tools').select('slug,name,description,category,credit_cost').eq('enabled', true).order('created_at', { ascending: false }).limit(8);
+    return (data as ToolRow[]) || [];
+  } catch {
+    return [];
+  }
+}
+
+export default async function Home() {
+  const tools = await loadTools();
+  return (
+    <main>
+      <section className='hero' id='home'>
+        <div className='copy'>
+          <span className='eyebrow'><LockKeyhole size={13} /> Ethical research platform</span>
+          <h1>Explore. Investigate.<br /><em>Discover.</em></h1>
+          <p>Professional open-source intelligence tools for public-information research and authorized security work, in one clean workspace.</p>
+          <div className='buttons'>
+            <Link href='/tools' className='primary big'><Search size={18} /> Explore tools <ArrowUpRight size={18} /></Link>
+            <AuthActions cta />
+          </div>
+          <div className='trust'>
+            <span><Shield /> Privacy-conscious</span>
+            <span><Zap /> Fast workflows</span>
+            <span><Activity /> Clear results</span>
+          </div>
+        </div>
+        <div className='visual'>
+          <div className='console'>
+            <div className='console-bar'><span /><span /><span /></div>
+            <div className='console-input'><Search size={16} /> Enter a value to look up…</div>
+            <div className='console-line w90' /><div className='console-line w70' /><div className='console-line w50' />
+            <small><i className='dot' /> Secure workspace ready</small>
+          </div>
+        </div>
+      </section>
+
+      <section className='section' id='tools'>
+        <div className='heading'>
+          <div><span className='eyebrow'>Research workspace</span><h2>Available <em>tools</em></h2><p>Every tool is added and managed by the admin team.</p></div>
+          <Link href='/tools'>View all tools <ArrowUpRight size={14} /></Link>
+        </div>
+        {tools.length ? (
+          <div className='grid'>
+            {tools.map((t) => (
+              <Link href={'/tools/' + t.slug} className='card' key={t.slug}>
+                <span className='icon'><Wrench size={20} /></span>
+                <span><b>{t.name}</b><small>{t.description || t.category}</small><span className='meta'>{t.credit_cost} credit{t.credit_cost === 1 ? '' : 's'}</span></span>
+              </Link>
+            ))}
+          </div>
+        ) : (
+          <p className='empty'>No tools have been published yet. Check back soon.</p>
+        )}
+      </section>
+
+      <section className='section about' id='about'>
+        <div className='shield'><Shield /><Check /></div>
+        <div>
+          <span className='eyebrow'>Responsible use</span>
+          <h2>Built for <em>ethical</em> research</h2>
+          <p>CyberX OSINT is intended for lawful investigation of public information, education and authorized security testing.</p>
+          <ul><li>Use only publicly available information</li><li>Respect privacy and local laws</li><li>Never target people without authorization</li></ul>
+        </div>
+      </section>
+
+      <section className='cta'>
+        <div><span className='eyebrow'>Get started</span><h2>Start your <em>research</em> today</h2></div>
+        <AuthActions cta />
+      </section>
+
+      <footer>
+        <div className='brand'><span className='logo'><ShieldCheck size={19} /></span><span>CyberX <i>OSINT</i></span></div>
+        <p>Open-source intelligence tools for public-information research and authorized security work.</p>
+        <div className='footer-links'><Link href='/tools'>Tools</Link><Link href='/announcements'>Updates</Link><Link href='/contact'>Contact</Link></div>
+        <div className='social'><a href='https://github.com/Xcyberking/CyberOsintIndia' target='_blank' rel='noreferrer' aria-label='GitHub'><Github size={18} /></a></div>
+        <small>© {new Date().getFullYear()} CyberX OSINT. All rights reserved.</small>
+      </footer>
+    </main>
+  );
+}

@@ -1,9 +1,35 @@
-import Link from "next/link";
-import {createClient} from "@/lib/supabase/server";
-import {Globe2,Mail,Phone,Search,Database,Image,ShieldCheck,Wrench} from "lucide-react";
-const icons:Record<string,any>={"ip-lookup":Globe2,"email-validator":Mail,"phone-validator":Phone,"domain-lookup":Search,"dns-lookup":Database,"image-metadata":Image,"url-safety":ShieldCheck};
-export default async function Tools(){
- const supabase=await createClient();
- const {data:items}=await supabase.from("tools").select("slug,name,description,category,credit_cost,enabled").eq("enabled",true).order("name");
- return <main className="panel-page"><Link href="/">← Home</Link><span className="eyebrow">RESEARCH WORKSPACE</span><h1>Explore <em>Tools</em></h1><p>Public-information utilities for ethical research and authorized security work.</p><div className="grid">{(items||[]).map(t=>{const Icon=icons[t.slug]||Wrench;return <Link className="card" href={"/tools/"+t.slug} key={t.slug}><span className="icon"><Icon/></span><span><b>{t.name}</b><small>{t.description||t.category}</small><label>{t.credit_cost} CREDIT{t.credit_cost===1?"":"S"} · OPEN TOOL</label></span></Link>;})}</div>{!items?.length&&<p>No tools are currently available.</p>}</main>;
+import Link from 'next/link';
+import { Wrench } from 'lucide-react';
+import { createPublicClient } from '@/lib/supabase/public';
+
+export const revalidate = 60;
+
+export default async function Tools() {
+  let tools: any[] = [];
+  try {
+    const { data } = await createPublicClient().from('tools').select('slug,name,description,category,credit_cost').eq('enabled', true).order('created_at', { ascending: false });
+    tools = data || [];
+  } catch {
+    tools = [];
+  }
+  return (
+    <main className='panel-page'>
+      <Link href='/'>← Home</Link>
+      <span className='eyebrow'>Research tools</span>
+      <h1>Tools</h1>
+      <p>Choose a tool to start a lookup. Credits are charged per search and refunded automatically if a lookup fails.</p>
+      {tools.length ? (
+        <div className='grid' style={{ marginTop: 22 }}>
+          {tools.map((t) => (
+            <Link href={'/tools/' + t.slug} className='card' key={t.slug}>
+              <span className='icon'><Wrench size={20} /></span>
+              <span><b>{t.name}</b><small>{t.description || t.category}</small><span className='meta'>{t.category} · {t.credit_cost} credit{t.credit_cost === 1 ? '' : 's'}</span></span>
+            </Link>
+          ))}
+        </div>
+      ) : (
+        <p className='empty' style={{ marginTop: 22 }}>No tools have been published yet.</p>
+      )}
+    </main>
+  );
 }
