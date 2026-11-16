@@ -1,17 +1,20 @@
-import {NextResponse} from "next/server";import {z} from "zod";import {lookup,resolve4,resolve6,resolveMx,resolveTxt,resolveNs,resolveCaa,resolveSoa} from "node:dns/promises";import {createClient} from "@/lib/supabase/server";
+import {NextResponse} from "next/server";
+import {z} from "zod";
+import {resolve4,resolve6,resolveMx,resolveTxt,resolveNs,resolveCaa,resolveSoa} from "node:dns/promises";
+import {createClient} from "@/lib/supabase/server";
 const inputSchema=z.object({tool:z.enum(["ip-lookup","domain-lookup","dns-lookup","email-validator","phone-validator","url-safety"]),input:z.string().trim().min(3).max(253)});
-function validPublicIp(s:string){return /^(?:(?:25[0-5]|2[0-4]\\d|1?\\d?\\d)\\.){3}(?:25[0-5]|2[0-4]\\d|1?\\d?\\d)$/.test(s)&&! /^(10\\.|127\\.|169\\.254\\.|192\\.168\\.|172\\.(?:1[6-9]|2\\d|3[01])\\.)/.test(s);}
-const validDomain=(s:string)=>/^(?=.{1,253}$)([a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\\.)+[a-z]{2,}$/i.test(s);
+function validPublicIp(s:string){return /^(?:(?:25[0-5]|2[0-4]\d|1?\d?\d)\.){3}(?:25[0-5]|2[0-4]\d|1?\d?\d)$/.test(s)&&! /^(10\.|127\.|169\.254\.|192\.168\.|172\.(?:1[6-9]|2\d|3[01])\.)/.test(s);}
+const validDomain=(s:string)=>/^(?=.{1,253}$)([a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,}$/i.test(s);
 async function safeResolve<T>(fn:()=>Promise<T>){try{return await fn()}catch{return null}}
 export async function POST(req:Request){
  const parsed=inputSchema.safeParse(await req.json().catch(()=>null));if(!parsed.success)return NextResponse.json({error:"Invalid input."},{status:400});
  const supabase=await createClient();const {data:{user}}=await supabase.auth.getUser();if(!user)return NextResponse.json({error:"Please log in."},{status:401});
  const {tool,input}=parsed.data;let result:any;const summary=input.slice(0,120);
  try{
-  if(tool==="email-validator"){const [local,domain]=input.split("@");const ok=!!local&&!!domain&&/^[^\\s@]+$/.test(local)&&/^[a-z0-9.-]+\\.[a-z]{2,}$/i.test(domain);result={valid:ok,syntax:ok?"valid":"invalid",note:"Syntax only; no mailbox probing."};}
-  else if(tool==="phone-validator"){const clean=input.replace(/[\\s()-]/g,"");const ok=/^\\+[1-9]\\d{7,14}$/.test(clean);result={valid:ok,normalized:ok?clean:null,note:"Format only; no subscriber identity or location is retrieved."};}
+  if(tool==="email-validator"){const [local,domain]=input.split("@");const ok=!!local&&!!domain&&/^[^\s@]+$/.test(local)&&/^[a-z0-9.-]+\.[a-z]{2,}$/i.test(domain);result={valid:ok,syntax:ok?"valid":"invalid",note:"Syntax only; no mailbox probing."};}
+  else if(tool==="phone-validator"){const clean=input.replace(/[\s()-]/g,"");const ok=/^\+[1-9]\d{7,14}$/.test(clean);result={valid:ok,normalized:ok?clean:null,note:"Format only; no subscriber identity or location is retrieved."};}
   else if(tool==="domain-lookup"||tool==="dns-lookup"){
-   const host=input.toLowerCase().replace(/^https?:\\/\\//,"").split("/")[0];if(!validDomain(host))return NextResponse.json({error:"Enter a valid public domain name."},{status:400});
+   const host=input.toLowerCase().replace(/^https?:\/\//,"").split("/")[0];if(!validDomain(host))return NextResponse.json({error:"Enter a valid public domain name."},{status:400});
    const [a,aaaa,mx,txt,ns,caa,soa]=await Promise.all([safeResolve(()=>resolve4(host)),safeResolve(()=>resolve6(host)),safeResolve(()=>resolveMx(host)),safeResolve(()=>resolveTxt(host)),safeResolve(()=>resolveNs(host)),safeResolve(()=>resolveCaa(host)),safeResolve(()=>resolveSoa(host))]);
    result={domain:host,records:{A:a,AAAA:aaaa,MX:mx,TXT:txt,NS:ns,CAA:caa,SOA:soa},note:"Public DNS records. Missing record types are returned as null."};
   }
