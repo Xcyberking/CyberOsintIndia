@@ -5,7 +5,7 @@ import {signOut} from "@/app/auth/actions";
 export default async function Dashboard(){
  const {supabase,user}=await requireUser();
  // Referral rewards are processed automatically on the first authenticated visit after email confirmation.
- await supabase.rpc("claim_referral_reward");
+ try { await supabase.rpc("claim_referral_reward"); } catch { /* referral processing must not block dashboard access */ }
  const [{data:profile},{data:history,count}]=await Promise.all([
   supabase.from("profiles").select("*").eq("id",user.id).single(),
   supabase.from("search_history").select("*",{count:"exact"}).eq("user_id",user.id).order("created_at",{ascending:false}).limit(8)
