@@ -40,3 +40,21 @@
 .auth-card p{overflow-wrap:anywhere}
 @media(max-width:600px){.auth-card textarea{font-size:16px}}
 :root[data-theme=light] .auth-card textarea{background:#f5f9fd;color:#10263b;border-color:#bfd3e5}
+
+
+/* Profile referral sharing */
+.referral-box{margin:22px 0;padding:24px;background:linear-gradient(145deg,#0a2340,#071426);border:1px solid #17629a;border-radius:16px;box-shadow:0 12px 35px #0003}
+.referral-heading h2{margin:8px 0 5px!important;font:700 23px "Space Grotesk"!important}
+.referral-box>p{color:#a9bfd5;font-size:13px;line-height:1.7}
+.referral-code-row{display:flex;justify-content:space-between;align-items:center;margin:18px 0;padding:13px 15px;border:1px dashed #267bb4;border-radius:10px;background:#041326;color:#8eacc8;font-size:12px}
+.referral-code-row b{font:700 20px "Space Grotesk";letter-spacing:2px;color:#4ecbff}
+.referral-link-label{display:grid;gap:8px;color:#9bb8d2;font-size:11px}
+.referral-link-label input{width:100%;padding:12px;border:1px solid #245078;border-radius:9px;background:#041020;color:#e8f5ff;font-size:12px}
+.referral-actions{display:flex;flex-wrap:wrap;gap:9px;margin:16px 0}
+.referral-actions button,.referral-actions a{cursor:pointer;display:inline-flex;align-items:center;justify-content:center;gap:7px;padding:11px 13px;border-radius:9px;border:1px solid #245078;background:#0a2038;color:#d8efff;font-size:11px;font-weight:700}
+.referral-actions .whatsapp{background:#0b3b2b;border-color:#16865b}.referral-actions .telegram{background:#0a3150;border-color:#177bb5}.referral-actions .facebook{background:#102c5c;border-color:#2860ad}.referral-actions .instagram{background:#452044;border-color:#a34c89}
+.referral-box>small{display:block;line-height:1.6}
+:root[data-theme=light] .referral-box{background:#fff;border-color:#b8d5e8}
+:root[data-theme=light] .referral-code-row{background:#f1f8fd;color:#526b83}
+:root[data-theme=light] .referral-link-label input{background:#f5f9fd;color:#10263b}
+@media(max-width:600px){.referral-box{padding:18px}.referral-actions>*{flex:1 1 calc(50% - 9px)}.referral-link-label input{font-size:11px}}
