@@ -1,8 +1,9 @@
 "use client";
 import Link from "next/link";
 import {useState} from "react";
+import type {ReactNode} from "react";
 import {jsPDF} from "jspdf";
-function Value({value}:{value:any}):JSX.Element{
+function Value({value}:{value:any}):ReactNode{
  if(value===null||value===undefined)return <span className="api-null">—</span>;
  if(typeof value==="boolean")return <span className={value?"api-true":"api-false"}>{value?"Yes":"No"}</span>;
  if(typeof value!=="object")return <span className="api-value">{String(value)}</span>;
