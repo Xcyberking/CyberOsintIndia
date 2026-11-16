@@ -1,2 +1,0 @@
-"use server";import {revalidatePath} from "next/cache";import {requireUser} from "@/lib/auth";
-export async function claimReferral(){const {supabase}=await requireUser();const {error}=await supabase.rpc("claim_referral_reward");if(error)throw new Error(error.message);revalidatePath("/referrals");revalidatePath("/dashboard");}
