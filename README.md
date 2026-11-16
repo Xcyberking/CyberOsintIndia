@@ -4,7 +4,7 @@ Mobile-first dark/neon-blue OSINT platform for ethical research and authorized s
 
 ## Features implemented in the repository
 - Responsive CyberX landing page, tools directory, dark/light theme toggle.
-- Supabase email/password signup, login, logout and auth callback.
+- Supabase email/password signup, login, logout, Google OAuth flow, password reset and auth callback.
 - User dashboard, profile page, credit ledger and recent search history.
 - Admin-only dashboard with user listing, credit adjustments and tool enable/disable/price controls.
 - Atomic credit deduction through a database function; admins have unlimited tool credits.
