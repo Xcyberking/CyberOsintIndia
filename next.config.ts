@@ -1,3 +1,3 @@
-import type { NextConfig } from "next";
-const nextConfig: NextConfig = { poweredByHeader: false, reactStrictMode: true };
+import type { NextConfig } from 'next';
+const nextConfig: NextConfig = { poweredByHeader: false, reactStrictMode: true, compress: true, experimental: { optimizePackageImports: ['lucide-react'] } };
 export default nextConfig;

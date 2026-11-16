@@ -1,31 +1,88 @@
-"use server";
-import { createClient } from "@/lib/supabase/server";
-import { redirect } from "next/navigation";
-export async function signIn(form:FormData){const supabase=await createClient();const email=String(form.get("email")||"").trim();const password=String(form.get("password")||"");const {error}=await supabase.auth.signInWithPassword({email,password});if(error)redirect("/login?error="+encodeURIComponent(error.message));redirect("/dashboard");}
-export async function signUp(form:FormData){const supabase=await createClient();const email=String(form.get("email")||"").trim();const password=String(form.get("password")||"");const name=String(form.get("name")||"").trim();if(password.length<8)redirect("/register?error=Password%20must%20be%20at%20least%208%20characters");const {error}=await supabase.auth.signUp({email,password,options:{data:{display_name:name,referral_code:String(form.get("referral_code")||"").trim().toUpperCase()},emailRedirectTo:process.env.NEXT_PUBLIC_SITE_URL?process.env.NEXT_PUBLIC_SITE_URL+"/auth/callback":undefined}});if(error)redirect("/register?error="+encodeURIComponent(error.message));redirect("/login?message=Check%20your%20email%20to%20confirm%20your%20account");}
-export async function signInWithGoogle(){const supabase=await createClient();const {data,error}=await supabase.auth.signInWithOAuth({provider:"google",options:{redirectTo:(process.env.NEXT_PUBLIC_SITE_URL||"http://localhost:3000")+"/auth/callback"}});if(error)redirect("/login?error="+encodeURIComponent(error.message));if(data.url)redirect(data.url);}
-export async function sendPasswordReset(form:FormData){const supabase=await createClient();const email=String(form.get("email")||"").trim();const {error}=await supabase.auth.resetPasswordForEmail(email,{redirectTo:(process.env.NEXT_PUBLIC_SITE_URL||"http://localhost:3000")+"/auth/callback?next=/reset-password"});if(error)redirect("/forgot-password?error="+encodeURIComponent(error.message));redirect("/forgot-password?message=Password%20reset%20email%20sent");}
-export async function updatePassword(form:FormData){const supabase=await createClient();const password=String(form.get("password")||"");if(password.length<8)redirect("/reset-password?error=Password%20must%20be%20at%20least%208%20characters");const {error}=await supabase.auth.updateUser({password});if(error)redirect("/reset-password?error="+encodeURIComponent(error.message));redirect("/login?message=Password%20updated");}
-export async function saveProfile(form:FormData){
- const supabase=await createClient();
- const {data:{user}}=await supabase.auth.getUser();
- if(!user) redirect("/login");
- const displayName=String(form.get("display_name")||"").trim();
- const bio=String(form.get("bio")||"").trim();
- if(displayName.length<2||displayName.length>60) redirect("/profile?error=Display%20name%20must%20be%202%E2%80%9360%20characters");
- if(bio.length>160) redirect("/profile?error=Bio%20must%20be%20160%20characters%20or%20less");
- const {error}=await supabase.from("profiles").update({display_name:displayName,bio}).eq("id",user.id).select("id").maybeSingle();
- if(error) redirect("/profile?error="+encodeURIComponent(error.message));
- redirect("/profile?message=Profile%20updated%20successfully");
+'use server';
+import { createClient } from '@/lib/supabase/server';
+import { redirect } from 'next/navigation';
+
+const enc = encodeURIComponent;
+const site = () => (process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000').replace(/[/]$/, '');
+
+export async function signIn(form: FormData) {
+  const supabase = await createClient();
+  const email = String(form.get('email') || '').trim();
+  const password = String(form.get('password') || '');
+  const { error } = await supabase.auth.signInWithPassword({ email, password });
+  if (error) redirect('/login?error=' + enc(error.message));
+  redirect('/dashboard');
 }
-export async function changePasswordFromProfile(form:FormData){
- const supabase=await createClient();
- const {data:{user}}=await supabase.auth.getUser();
- if(!user) redirect("/login");
- const password=String(form.get("password")||"");
- if(password.length<8) redirect("/profile?error=Password%20must%20be%20at%20least%208%20characters");
- const {error}=await supabase.auth.updateUser({password});
- if(error) redirect("/profile?error="+encodeURIComponent(error.message));
- redirect("/profile?message=Password%20updated%20successfully");
+
+export async function signUp(form: FormData) {
+  const supabase = await createClient();
+  const email = String(form.get('email') || '').trim();
+  const password = String(form.get('password') || '');
+  const name = String(form.get('name') || '').trim().slice(0, 60);
+  const ref = String(form.get('referral_code') || '').trim().toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 8);
+  const back = (msg: string) => '/register?error=' + enc(msg) + (ref ? '&ref=' + ref : '');
+  if (password.length < 8) redirect(back('Password must be at least 8 characters'));
+  const { data, error } = await supabase.auth.signUp({
+    email,
+    password,
+    options: { data: { display_name: name, referral_code: ref }, emailRedirectTo: site() + '/auth/callback' },
+  });
+  if (error) redirect(back(error.message));
+  // Email confirmation OFF in Supabase -> a session exists immediately: go straight in.
+  if (data.session) redirect('/dashboard');
+  redirect('/login?message=' + enc('Check your email to confirm your account, then log in.'));
 }
-export async function signOut(){const supabase=await createClient();await supabase.auth.signOut();redirect("/");}
+
+export async function signInWithGoogle() {
+  const supabase = await createClient();
+  const { data, error } = await supabase.auth.signInWithOAuth({ provider: 'google', options: { redirectTo: site() + '/auth/callback' } });
+  if (error) redirect('/login?error=' + enc(error.message));
+  if (data.url) redirect(data.url);
+}
+
+export async function sendPasswordReset(form: FormData) {
+  const supabase = await createClient();
+  const email = String(form.get('email') || '').trim();
+  const { error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo: site() + '/auth/callback?next=/reset-password' });
+  if (error) redirect('/forgot-password?error=' + enc(error.message));
+  redirect('/forgot-password?message=' + enc('Password reset email sent'));
+}
+
+export async function updatePassword(form: FormData) {
+  const supabase = await createClient();
+  const password = String(form.get('password') || '');
+  if (password.length < 8) redirect('/reset-password?error=' + enc('Password must be at least 8 characters'));
+  const { error } = await supabase.auth.updateUser({ password });
+  if (error) redirect('/reset-password?error=' + enc(error.message));
+  redirect('/login?message=' + enc('Password updated'));
+}
+
+export async function saveProfile(form: FormData) {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) redirect('/login');
+  const displayName = String(form.get('display_name') || '').trim();
+  const bio = String(form.get('bio') || '').trim();
+  if (displayName.length < 2 || displayName.length > 60) redirect('/profile?error=' + enc('Display name must be 2-60 characters'));
+  if (bio.length > 160) redirect('/profile?error=' + enc('Bio must be 160 characters or less'));
+  const { error } = await supabase.from('profiles').update({ display_name: displayName, bio }).eq('id', user.id);
+  if (error) redirect('/profile?error=' + enc(error.message));
+  redirect('/profile?message=' + enc('Profile updated successfully'));
+}
+
+export async function changePasswordFromProfile(form: FormData) {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) redirect('/login');
+  const password = String(form.get('password') || '');
+  if (password.length < 8) redirect('/profile?error=' + enc('Password must be at least 8 characters'));
+  const { error } = await supabase.auth.updateUser({ password });
+  if (error) redirect('/profile?error=' + enc(error.message));
+  redirect('/profile?message=' + enc('Password updated successfully'));
+}
+
+export async function signOut() {
+  const supabase = await createClient();
+  await supabase.auth.signOut();
+  redirect('/');
+}
