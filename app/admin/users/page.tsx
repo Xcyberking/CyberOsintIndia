@@ -1,0 +1,11 @@
+import Link from "next/link";
+import {requireAdmin} from "@/lib/auth";
+import {adjustCredits,setUserRole} from "../actions";
+export default async function AdminUsers(){
+ const {supabase}=await requireAdmin();
+ const [{data:users},{count:userCount}]=await Promise.all([
+  supabase.from("profiles").select("id,email,display_name,role,credits,created_at").order("created_at",{ascending:false}).limit(250),
+  supabase.from("profiles").select("*",{count:"exact",head:true})
+ ]);
+ return <main className="panel-page"><Link href="/admin">← Control center</Link><span className="eyebrow">USER CONTROL</span><h1>User management</h1><p>Manage account roles and credit balances. Users cannot change their own role or credit balance.</p><div className="stats"><article><small>REGISTERED USERS</small><b>{userCount??0}</b></article><article><small>ADMINS</small><b>{users?.filter(x=>x.role==="admin").length??0}</b></article></div><div className="table-wrap"><table><thead><tr><th>User</th><th>Role</th><th>Credits</th><th>Role control</th><th>Credit adjustment</th></tr></thead><tbody>{users?.map(u=><tr key={u.id}><td><b>{u.display_name||"Unnamed"}</b><br/><small>{u.email}</small><br/><small>{new Date(u.created_at).toLocaleDateString()}</small></td><td>{u.role}</td><td>{u.credits}</td><td><form action={setUserRole} className="inline-form"><input type="hidden" name="user_id" value={u.id}/><select name="role" defaultValue={u.role}><option value="user">User</option><option value="admin" disabled={u.id===users?.[0]?.id}>Admin</option></select><button className="ghost" disabled={u.id===users?.[0]?.id}>Save role</button></form></td><td><form action={adjustCredits} className="inline-form"><input type="hidden" name="user_id" value={u.id}/><input name="amount" type="number" min="-10000" max="10000" required placeholder="+/- credits"/><input name="reason" defaultValue="Admin adjustment" maxLength={160}/><button className="primary">Apply</button></form></td></tr>)}</tbody></table></div><p className="muted">For safety, admins cannot change their own role. The database also prevents removal of the last administrator. Account deletion and suspension are not enabled in this panel.</p></main>;
+}
