@@ -45,3 +45,5 @@ begin
 exception when unique_violation then raise exception 'Referral has already been claimed for this account';
 end; $$;
 grant execute on function public.claim_referral_reward() to authenticated;
+
+insert into public.tools(slug,name,description,category,credit_cost,enabled) values('image-metadata','Image Metadata','Privacy-filtered metadata from user-uploaded images','Media',1,true) on conflict(slug) do nothing;
