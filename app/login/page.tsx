@@ -1,6 +1,11 @@
 import Link from "next/link";
 import {signIn,signInWithGoogle} from "@/app/auth/actions";
+import {createClient} from "@/lib/supabase/server";
+import {redirect} from "next/navigation";
 export default async function Login({searchParams}:{searchParams:Promise<{error?:string;message?:string}>}){
+ const supabase=await createClient();
+ const {data:{user}}=await supabase.auth.getUser();
+ if(user)redirect("/dashboard");
  const q=await searchParams;
  return <main className="auth-page"><div className="auth-card">
   <Link href="/" className="back">← CyberX OSINT</Link>
