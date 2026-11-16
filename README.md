@@ -21,10 +21,11 @@ Mobile-first dark/neon-blue OSINT platform for ethical research and authorized s
 3. Set `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, and `NEXT_PUBLIC_SITE_URL`.
 4. Run `supabase/schema.sql` in the Supabase SQL Editor.
 5. Then run `supabase/referrals.sql` to enable referral codes and add the image metadata tool.
-6. Register your account and confirm its email.
-7. Replace `YOUR_VERIFIED_EMAIL` in `supabase/ADMIN_SETUP.sql` with your verified account email and run that SQL once.
-8. In Supabase Auth, set the site URL and add `/auth/callback` to allowed redirect URLs.
-9. Run `npm run dev`.
+6. In Supabase Auth, set the site URL and add `/auth/callback` to allowed redirect URLs.
+7. To enable Google sign-in, configure Google under Supabase Authentication → Providers and add the Supabase callback URL in Google Cloud.
+8. Register your account and confirm its email.
+9. Replace `YOUR_VERIFIED_EMAIL` in `supabase/ADMIN_SETUP.sql` with your verified account email and run that SQL once.
+10. Run `npm run dev`.
 
 ## Tool behavior and limitations
 - IP lookup uses the public ipwho.is service and returns approximate network/geolocation metadata, not a person's precise location.
@@ -34,7 +35,7 @@ Mobile-first dark/neon-blue OSINT platform for ethical research and authorized s
 - Image metadata accepts user-uploaded files up to 10 MB and deliberately excludes GPS fields.
 - Username search and advanced social-profile discovery are not enabled.
 - PDF export contains the current tool result.
-- Health monitor reports configuration presence; it is not a continuous uptime probe.
+- Health monitor runs live IP-provider and DNS probes when an admin opens the page; it is not a background monitor.
 - Google OAuth, payments, custom API-provider editor, advanced DNS record types and full username discovery require separate provider configuration/integration and are not claimed as live.
 
 ## Security
