@@ -13,8 +13,8 @@ const items=[
 ];
 export default function AppNavigation(){
  const path=usePathname();
- if(path==="/"||path.startsWith("/login")||path.startsWith("/register")||path.startsWith("/forgot-password")||path.startsWith("/reset-password")) return null;
- return <nav className="app-navigation" aria-label="Main navigation">
+ if(path.startsWith("/login")||path.startsWith("/register")||path.startsWith("/forgot-password")||path.startsWith("/reset-password")) return null;
+ return <nav className={"app-navigation"+(path==="/"?" home-app-navigation":"")} aria-label="Main navigation">
   <Link href="/" className="app-nav-brand"><span className="logo"><ShieldCheck size={19}/></span><span>CyberX <em>OSINT</em></span></Link>
   <div className="app-nav-links">{items.map(({href,label,Icon})=><Link key={href} href={href} className={path===href||(href!=="/"&&path.startsWith(href+"/"))?"active":""}><Icon size={17}/><span>{label}</span></Link>)}</div>
  </nav>;
