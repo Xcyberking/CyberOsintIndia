@@ -23,15 +23,21 @@ export async function setUserRole(form:FormData){
 }
 export async function createTool(form:FormData){
  const {supabase}=await requireAdmin();
- const slug=String(form.get("slug")||"").trim().toLowerCase();
  const name=String(form.get("name")||"").trim().slice(0,80);
+ const slug=name.toLowerCase().normalize("NFKD").replace(/[\\u0300-\\u036f]/g,"").replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,"").slice(0,60);
+ const apiUrl=String(form.get("api_url")||"").trim();
  const description=String(form.get("description")||"").trim().slice(0,240);
  const category=String(form.get("category")||"General").trim().slice(0,40)||"General";
  const creditCost=Number(form.get("credit_cost"));
  if(!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug)||slug.length>60)throw new Error("Slug must use lowercase letters, numbers and hyphens");
- if(name.length<2||!Number.isInteger(creditCost)||creditCost<0||creditCost>1000)throw new Error("Invalid tool details");
- const {error}=await supabase.from("tools").insert({slug,name,description,category,credit_cost:creditCost,enabled:form.get("enabled")==="on"});
+ if(name.length<2||!slug||!apiUrl||apiUrl.length>2000||!Number.isInteger(creditCost)||creditCost<0||creditCost>1000)throw new Error("Enter a tool name, API URL and valid credit cost.");
+ let parsedUrl:URL;try{parsedUrl=new URL(apiUrl.replaceAll("{{input}}","demo").replaceAll("{{input_encoded}}","demo").replaceAll("{{input_raw}}","demo").replaceAll("{}","demo"));}catch{throw new Error("Enter a valid API URL. Use {} where the user input should be inserted.");}
+ if(!["http:","https:"].includes(parsedUrl.protocol)||parsedUrl.username||parsedUrl.password)throw new Error("API URL must use HTTP or HTTPS without embedded credentials.");
+ const {error}=await supabase.from("tools").insert({slug,name,description:"",category:"Custom",credit_cost:creditCost,enabled:true});
  if(error)throw new Error(error.message);
+ const config={url:apiUrl,method:"GET",param_name:"query",headers_json:"{}",body_template:"",content_type:"application/json",configured_at:new Date().toISOString()};
+ const {error:configError}=await supabase.from("site_settings").upsert({key:"tool_api_"+slug,value:config,updated_at:new Date().toISOString()});
+ if(configError){await supabase.from("tools").delete().eq("slug",slug);throw new Error(configError.message);}
  revalidatePath("/admin/tools");revalidatePath("/tools");revalidatePath("/admin");
 }
 export async function updateTool(form:FormData){
