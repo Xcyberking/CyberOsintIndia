@@ -1,0 +1,5 @@
+"use server";
+import {revalidatePath} from "next/cache";
+import {requireAdmin} from "@/lib/auth";
+export async function adjustCredits(form:FormData){const {supabase}=await requireAdmin();const userId=String(form.get("user_id")||"");const amount=Number(form.get("amount"));const reason=String(form.get("reason")||"Admin adjustment").slice(0,160);if(!userId||!Number.isInteger(amount)||amount===0||Math.abs(amount)>10000)throw new Error("Invalid adjustment");const {error}=await supabase.rpc("admin_adjust_credits",{p_user_id:userId,p_amount:amount,p_reason:reason});if(error)throw new Error(error.message);revalidatePath("/admin");}
+export async function updateTool(form:FormData){const {supabase}=await requireAdmin();const slug=String(form.get("slug")||"");const creditCost=Number(form.get("credit_cost"));const enabled=form.get("enabled")==="on";if(!slug||!Number.isInteger(creditCost)||creditCost<0||creditCost>1000)throw new Error("Invalid tool settings");const {error}=await supabase.from("tools").update({credit_cost:creditCost,enabled}).eq("slug",slug);if(error)throw new Error(error.message);revalidatePath("/admin");}
