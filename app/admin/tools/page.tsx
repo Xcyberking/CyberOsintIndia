@@ -1,18 +1,82 @@
-import Link from "next/link";
-import {requireAdmin} from "@/lib/auth";
-import {createTool,updateTool,deleteTool,saveToolApi} from "../actions";
-export default async function AdminTools(){
- const {supabase}=await requireAdmin();
- const [{data:tools},{data:configs}]=await Promise.all([
-  supabase.from("tools").select("slug,name,description,category,credit_cost,enabled").order("name"),
-  supabase.from("site_settings").select("key,value").like("key","tool_api_%")
- ]);
- const apiMap=new Map((configs||[]).map((c:any)=>[c.key.replace("tool_api_",""),c.value]));
- return <main className="panel-page"><Link href="/admin">← Control center</Link><span className="eyebrow">TOOL CATALOGUE & API CONNECTORS</span><h1>Tool management</h1><p>Create a tool by entering its name, API URL and credit cost. Save it once and it will appear in the users’ Tools screen automatically.</p>
- <form action={createTool} className="settings-form admin-tool-create"><h2>＋ Add new tool</h2><label>Tool name<input name="name" required minLength={2} maxLength={80} placeholder="Email info"/></label><label>API URL<input name="api_url" type="text" required maxLength={2000} placeholder="https://local.onrender.com/FetchData?Local={}"/></label><small className="muted">Put <code>{"{}"}</code> where the user’s input should go. Example: <code>https://local.onrender.com/FetchData?Local={"{ }".replace(" ","")}</code>. GET APIs are used by default.</small><label>Credit cost<input name="credit_cost" type="number" min="0" max="1000" defaultValue="1" required/></label><button className="primary">Save tool</button></form>
- <h2>Saved tools ({tools?.length??0})</h2><div className="admin-tool-list">{tools?.map(t=>{const cfg:any=apiMap.get(t.slug)||{};return <article className="auth-card admin-tool-card" key={t.slug}>
- <form action={updateTool}><input type="hidden" name="slug" value={t.slug}/><h3>{t.name}</h3><small className="muted">/{t.slug}</small><label>Name<input name="name" defaultValue={t.name} required maxLength={80}/></label><label>Description<textarea name="description" defaultValue={t.description} maxLength={240} rows={2}/></label><label>Category<input name="category" defaultValue={t.category} maxLength={40}/></label><label>Credit cost<input name="credit_cost" type="number" min="0" max="1000" defaultValue={t.credit_cost}/></label><label className="check"><input type="checkbox" name="enabled" defaultChecked={t.enabled}/> Enabled and visible</label><button className="primary">Save tool details</button></form>
- <form action={saveToolApi} className="tool-api-config"><input type="hidden" name="slug" value={t.slug}/><h3>🔌 API connection</h3><label>API URL<input name="url" type="text" required defaultValue={cfg.url||""} placeholder="https://local.onrender.com/FetchData?Local={}"/></label><label>Method<select name="method" defaultValue={cfg.method||"GET"}><option>GET</option><option>POST</option></select></label><label>Query parameter name<input name="param_name" defaultValue={cfg.param_name||"query"} placeholder="query"/></label><label>Headers JSON<textarea name="headers_json" rows={3} defaultValue={cfg.headers_json||"{}"} placeholder='{"Authorization":"Bearer {{env:MY_API_KEY}}"}'/></label><label>POST body template<textarea name="body_template" rows={3} defaultValue={cfg.body_template||'{"query":"{{input}}"}'}/></label><label>Content-Type<input name="content_type" defaultValue={cfg.content_type||"application/json"}/></label><button className="primary">Update API</button><small className="muted">Use <code>{"{}"}</code>, <code>{"{{input}}"}</code> or <code>{"{{input_encoded}}"}</code> in the URL. Keep private API keys in Vercel Environment Variables and reference them as {"{{env:VARIABLE_NAME}}"}.</small></form>
- <form action={deleteTool} className="admin-delete-form"><input type="hidden" name="slug" value={t.slug}/><button className="ghost">Delete tool</button></form>
- </article>})}</div></main>;
+import Link from 'next/link';
+import { requireAdmin } from '@/lib/auth';
+import ConfirmButton from '@/components/ConfirmButton';
+import { createTool, updateTool, deleteTool, toggleTool } from '../actions';
+
+function Fields({ t, api }: { t?: any; api?: any }) {
+  return (
+    <div className='form-grid'>
+      <label>Tool name<input name='name' required minLength={2} maxLength={80} defaultValue={t?.name || ''} placeholder='Example: Number info' /></label>
+      <label>Category<input name='category' maxLength={40} defaultValue={t?.category || 'General'} /></label>
+      <label className='full'>Description<textarea name='description' rows={2} maxLength={240} defaultValue={t?.description || ''} placeholder='Short text shown on the tool card' /></label>
+      <label className='full'>API URL<input name='api_url' required maxLength={2000} defaultValue={api?.url || ''} placeholder='https://your-api.example.com/lookup?q={}' /><span className='hint'>Put <code>{'{}'}</code> where the user input should go. If you leave it out, input is sent as a query parameter.</span></label>
+      <label>Credit cost<input name='credit_cost' type='number' min={0} max={1000} required defaultValue={t?.credit_cost ?? 1} /></label>
+      <label>Method<select name='method' defaultValue={api?.method || 'GET'}><option value='GET'>GET</option><option value='POST'>POST</option></select></label>
+      <label className='check full'><input type='checkbox' name='enabled' defaultChecked={t ? t.enabled : true} /> Live and visible to users</label>
+      <details className='advanced full'>
+        <summary>Advanced API options</summary>
+        <div className='form-grid'>
+          <label>Query parameter name<input name='param_name' maxLength={60} defaultValue={api?.param_name || 'query'} /></label>
+          <label>Content type (POST)<input name='content_type' maxLength={100} defaultValue={api?.content_type || 'application/json'} /></label>
+          <label className='full'>Headers (JSON)<textarea name='headers_json' rows={3} defaultValue={api?.headers_json || '{}'} placeholder='{"Authorization":"Bearer {{env:MY_API_KEY}}"}' /><span className='hint'>Keep secrets in Vercel env vars and reference them as <code>{'{{env:NAME}}'}</code>.</span></label>
+          <label className='full'>POST body template<textarea name='body_template' rows={3} defaultValue={api?.body_template || ''} placeholder='{"query":"{{input}}"}' /></label>
+        </div>
+      </details>
+    </div>
+  );
+}
+
+export default async function AdminTools({ searchParams }: { searchParams: Promise<{ error?: string; message?: string }> }) {
+  const q = await searchParams;
+  const { supabase } = await requireAdmin();
+  const [{ data: tools }, { data: apis }] = await Promise.all([
+    supabase.from('tools').select('slug,name,description,category,credit_cost,enabled').order('created_at', { ascending: false }),
+    supabase.from('tool_apis').select('slug,url,method,param_name,headers_json,body_template,content_type'),
+  ]);
+  const apiMap = new Map((apis || []).map((a: any) => [a.slug, a]));
+  return (
+    <main className='panel-page'>
+      <Link href='/admin'>← Overview</Link>
+      <span className='eyebrow'>Tool manager</span>
+      <h1>Tools</h1>
+      <p>Only the tools listed here are shown to users. Add, edit, hide or delete them anytime.</p>
+      {q.error && <div className='error'>{q.error}</div>}
+      {q.message && <div className='success'>{q.message}</div>}
+
+      <h2>Add a new tool</h2>
+      <form action={createTool} className='panel-card'>
+        <Fields />
+        <div className='form-actions'><button className='primary' type='submit'>Add tool</button></div>
+      </form>
+
+      <h2>Your tools ({tools?.length ?? 0})</h2>
+      <div className='admin-tool-list'>
+        {tools?.map((t: any) => {
+          const api: any = apiMap.get(t.slug);
+          return (
+            <article className='admin-tool-card' key={t.slug}>
+              <div className='tool-card-head'>
+                <div className='info'><b>{t.name}</b><small>/{t.slug} · {t.category} · {t.credit_cost} credit{t.credit_cost === 1 ? '' : 's'}</small></div>
+                <span className={'badge ' + (t.enabled ? 'on' : 'off')}>{t.enabled ? 'Live' : 'Hidden'}</span>
+                {!api && <span className='badge warn'>No API</span>}
+                <div className='tool-card-actions'>
+                  <form action={toggleTool}><input type='hidden' name='slug' value={t.slug} /><input type='hidden' name='enabled' value={t.enabled ? '0' : '1'} /><button className='ghost' type='submit'>{t.enabled ? 'Hide' : 'Show'}</button></form>
+                  <form action={deleteTool}><input type='hidden' name='slug' value={t.slug} /><ConfirmButton className='danger' message={'Delete “' + t.name + '” permanently? Its API settings are removed too.'}>Delete</ConfirmButton></form>
+                </div>
+              </div>
+              <details>
+                <summary>Edit tool and API</summary>
+                <form action={updateTool} className='tool-edit-form'>
+                  <input type='hidden' name='slug' value={t.slug} />
+                  <Fields t={t} api={api} />
+                  <div className='form-actions'><button className='primary' type='submit'>Save changes</button></div>
+                </form>
+              </details>
+            </article>
+          );
+        })}
+        {!tools?.length && <p className='empty'>No tools yet. Add your first tool above.</p>}
+      </div>
+    </main>
+  );
 }
