@@ -24,7 +24,7 @@ export async function setUserRole(form:FormData){
 export async function createTool(form:FormData){
  const {supabase}=await requireAdmin();
  const name=String(form.get("name")||"").trim().slice(0,80);
- const slug=name.toLowerCase().normalize("NFKD").replace(/[\\u0300-\\u036f]/g,"").replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,"").slice(0,60);
+ const slug=name.toLowerCase().normalize("NFKD").replace(/[\u0300-\u036f]/g,"").replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,"").slice(0,60);
  const apiUrl=String(form.get("api_url")||"").trim();
  const description=String(form.get("description")||"").trim().slice(0,240);
  const category=String(form.get("category")||"General").trim().slice(0,40)||"General";
