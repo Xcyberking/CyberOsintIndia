@@ -70,3 +70,20 @@
 .admin-tool-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;margin:15px 0}
 .admin-tool-card{width:100%;max-width:none;padding:18px}.admin-tool-card form{display:flex;flex-direction:column;gap:12px}.admin-tool-card h3{margin:0;font:700 18px "Space Grotesk"}.admin-delete-form{margin-top:10px}
 @media(max-width:650px){.admin-control-grid,.admin-tool-list{grid-template-columns:1fr}.admin-control-card{min-height:105px}.admin-tool-create{padding:16px}}
+
+
+/* Universal API tool response and connector forms */
+.tool-api-config{display:flex;flex-direction:column;gap:11px;margin-top:18px;padding:15px;border:1px solid #1a6595;border-radius:12px;background:#06182a}
+.tool-api-config h3{margin:0;font:700 16px "Space Grotesk";color:#62d2ff}
+.tool-api-config p{margin:0;font-size:11px;line-height:1.6}
+.tool-api-config label{display:grid;gap:6px;font-size:11px;color:#bad0e4}
+.tool-api-config input,.tool-api-config textarea,.tool-api-config select{width:100%;min-width:0;padding:10px;border:1px solid #245078;border-radius:8px;background:#041020;color:#edf6ff;font:12px "DM Sans"}
+.api-result-card{margin:25px 0;padding:20px;border:1px solid #1c6393;border-radius:15px;background:linear-gradient(145deg,#091d32,#061326);overflow:hidden}
+.api-result-head{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:18px;padding-bottom:14px;border-bottom:1px solid #194368}
+.api-result-head h2{margin:5px 0!important}.api-result-head small{color:#8baac5;font-size:10px}
+.api-object{display:grid;gap:8px}.api-field{display:grid;grid-template-columns:minmax(100px,30%) 1fr;gap:12px;align-items:start;padding:10px 12px;border:1px solid #173c5e;border-radius:8px;background:#071a2d}
+.api-field>b{font-size:11px;color:#69caff;text-transform:capitalize;overflow-wrap:anywhere}.api-value{font-size:12px;color:#e0edf8;overflow-wrap:anywhere;white-space:pre-wrap}.api-null{color:#7891a8}.api-true{color:#53dfa5}.api-false{color:#ffb18a}
+.api-array{display:grid;gap:7px}.api-array-item{padding:10px;border:1px solid #173c5e;border-radius:8px;background:#071a2d;overflow-wrap:anywhere}
+.api-result-foot{margin-top:15px;padding-top:12px;border-top:1px solid #194368;color:#8caec9;font-size:10px}
+:root[data-theme=light] .api-result-card{background:#fff}.api-field,:root[data-theme=light] .api-array-item{background:#f4f9fd;border-color:#d4e4f0}.api-field>b{color:#126da8}.api-value{color:#203c55}
+@media(max-width:600px){.api-result-card{padding:14px}.api-result-head{align-items:flex-start;flex-direction:column}.api-field{grid-template-columns:1fr;gap:5px}.tool-api-config{padding:12px}}
