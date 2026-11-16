@@ -29,3 +29,5 @@
 :root[data-theme=light] .app-navigation{background:rgba(255,255,255,.97);border-color:#c6dced}
 :root[data-theme=light] .app-nav-links a{color:#58728b}
 :root[data-theme=light] .app-nav-links a.active,:root[data-theme=light] .app-nav-links a:hover{background:#e5f3ff;color:#0866a8}
+
+.home-app-navigation{display:none}@media(max-width:760px){.home-app-navigation{display:block}}
