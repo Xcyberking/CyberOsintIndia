@@ -1,0 +1,1 @@
+import Link from "next/link";import {requireAdmin} from "@/lib/auth";import HealthMonitor from "../HealthMonitor";export default async function HealthPage(){await requireAdmin();return <main className="panel-page"><Link href="/admin">← Admin panel</Link><span className="eyebrow">SYSTEM STATUS</span><h1>Health monitor</h1><HealthMonitor/></main>;}
