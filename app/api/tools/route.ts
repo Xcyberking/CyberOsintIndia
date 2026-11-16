@@ -18,8 +18,9 @@ function normalizeBody(value:any,depth=0):any{
 async function runCustomApi(supabase:any,tool:string,input:string){
  const {data:setting,error}=await supabase.from("site_settings").select("value").eq("key","tool_api_"+tool).maybeSingle();
  if(error||!setting?.value?.url)throw new Error("This tool API is not configured yet. Ask an admin to add its API endpoint.");
- const cfg=setting.value;let url=replaceInput(String(cfg.url),input);
- if(!url.includes("{{input")){const param=String(cfg.param_name||"query").replace(/[^a-zA-Z0-9_-]/g,"");const parsed=new URL(url);parsed.searchParams.set(param,input);url=parsed.toString();}
+ const cfg=setting.value;const urlTemplate=String(cfg.url);
+ let url=urlTemplate.replaceAll("{{input_encoded}}",encodeURIComponent(input)).replaceAll("{{input_raw}}",input).replaceAll("{{input}}",encodeURIComponent(input));
+ if(!urlTemplate.includes("{{input")){const param=String(cfg.param_name||"query").replace(/[^a-zA-Z0-9_-]/g,"");const parsed=new URL(url);if(parsed.searchParams.has(param)&&!parsed.searchParams.get(param))parsed.searchParams.set(param,input);else if(!parsed.searchParams.has(param))parsed.searchParams.set(param,input);url=parsed.toString();}
  const target=new URL(url);if(!["https:","http:"].includes(target.protocol)||target.username||target.password)throw new Error("API URL must be a valid HTTP or HTTPS endpoint.");
  const host=target.hostname.toLowerCase();if(host==="localhost"||host.endsWith(".localhost")||host.endsWith(".local")||host==="0.0.0.0"||host==="127.0.0.1"||host==="::1"||/^10\./.test(host)||/^192\.168\./.test(host)||/^172\.(1[6-9]|2\d|3[01])\./.test(host))throw new Error("Private or local API hosts are not allowed.");
  let headers:Record<string,string>={"Accept":"application/json, text/plain, application/xml, text/xml, */*"};
