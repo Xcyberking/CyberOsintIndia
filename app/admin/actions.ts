@@ -55,3 +55,22 @@ export async function deleteTool(form:FormData){
  if(error)throw new Error(error.message);
  revalidatePath("/admin/tools");revalidatePath("/tools");revalidatePath("/admin");
 }
+
+export async function saveToolApi(form:FormData){
+ const {supabase}=await requireAdmin();
+ const slug=String(form.get("slug")||"").trim().toLowerCase();
+ const url=String(form.get("url")||"").trim();
+ const method=String(form.get("method")||"GET").toUpperCase();
+ const paramName=String(form.get("param_name")||"query").trim().slice(0,60);
+ const headersJson=String(form.get("headers_json")||"{}").trim();
+ const bodyTemplate=String(form.get("body_template")||"").slice(0,12000);
+ const contentType=String(form.get("content_type")||"application/json").trim().slice(0,100);
+ if(!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug)||!url||url.length>2000||!["GET","POST"].includes(method))throw new Error("Invalid API configuration");
+ let parsedUrl:URL;try{parsedUrl=new URL(url.replaceAll("{{input}}","demo").replaceAll("{{input_encoded}}","demo").replaceAll("{{input_raw}}","demo"));}catch{throw new Error("Enter a valid API URL.");}
+ if(!["http:","https:"].includes(parsedUrl.protocol)||parsedUrl.username||parsedUrl.password)throw new Error("API URL must use HTTP or HTTPS without embedded credentials.");
+ let headers:any;try{headers=JSON.parse(headersJson);if(!headers||Array.isArray(headers)||typeof headers!=="object"||Object.values(headers).some(v=>typeof v!=="string"))throw new Error();}catch{throw new Error("Headers must be a JSON object with string values.");}
+ const value={url,method,param_name:paramName||"query",headers_json:JSON.stringify(headers),body_template:bodyTemplate,content_type:contentType,configured_at:new Date().toISOString()};
+ const {error}=await supabase.from("site_settings").upsert({key:"tool_api_"+slug,value,updated_at:new Date().toISOString()});
+ if(error)throw new Error(error.message);
+ revalidatePath("/admin/tools");revalidatePath("/tools");revalidatePath("/tools/"+slug);
+}
