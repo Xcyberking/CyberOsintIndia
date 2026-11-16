@@ -58,3 +58,15 @@
 :root[data-theme=light] .referral-code-row{background:#f1f8fd;color:#526b83}
 :root[data-theme=light] .referral-link-label input{background:#f5f9fd;color:#10263b}
 @media(max-width:600px){.referral-box{padding:18px}.referral-actions>*{flex:1 1 calc(50% - 9px)}.referral-link-label input{font-size:11px}}
+
+
+/* Admin control center */
+.admin-control-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:13px;margin:18px 0 30px}
+.admin-control-card{display:flex;flex-direction:column;gap:8px;padding:18px;border:1px solid #174b78;border-radius:13px;background:linear-gradient(145deg,#0a2038,#061326);min-height:125px}
+.admin-control-card>span{font:700 16px "Space Grotesk";color:#e8f6ff}.admin-control-card small{color:#91abc5;font-size:12px;line-height:1.5}.admin-control-card b{color:#3fc3ff;font-size:11px;margin-top:auto}
+.admin-tool-create{max-width:700px;margin:18px 0 30px;padding:22px;border:1px solid #17446d;border-radius:14px;background:#08182b}
+.admin-tool-create h2{margin:0}.admin-tool-create label,.admin-tool-card label{display:grid;gap:7px;color:#c6d9ec;font-size:12px}
+.admin-tool-create input,.admin-tool-create textarea,.admin-tool-card input,.admin-tool-card textarea,.admin-tool-card select,.inline-form select{width:100%;padding:11px;border:1px solid #245078;background:#041020;border-radius:8px;color:#edf6ff}
+.admin-tool-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;margin:15px 0}
+.admin-tool-card{width:100%;max-width:none;padding:18px}.admin-tool-card form{display:flex;flex-direction:column;gap:12px}.admin-tool-card h3{margin:0;font:700 18px "Space Grotesk"}.admin-delete-form{margin-top:10px}
+@media(max-width:650px){.admin-control-grid,.admin-tool-list{grid-template-columns:1fr}.admin-control-card{min-height:105px}.admin-tool-create{padding:16px}}
