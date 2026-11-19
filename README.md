@@ -7,7 +7,7 @@ Android-first public-source research workspace built with Next.js 15, React 19 a
 - Public IP metadata lookup and public RDAP domain registration lookup.
 - Email syntax validation, URL structure inspection and direct links to public profile pages.
 - PWA manifest and app icon.
-- Optional Supabase Auth.
+- Supabase Auth with persistent sessions and per-user search history.
 
 ## Admin control center
 Open `/admin` after deployment. The panel includes:
@@ -28,7 +28,7 @@ Admin access is enforced using Supabase Auth, a database role check and Row Leve
 1. Use Node.js 22 or newer.
 2. Copy `.env.example` to `.env.local`.
 3. Set `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`. The CyberOsintIndia project values are prefilled in `.env.example`.
-4. In the Supabase SQL Editor, run `supabase/schema.sql`, then `supabase/admin-suite.sql`.
+4. The connected CyberOsintIndia database has already received the additive admin integration migration. For this existing project, do not rerun the old bootstrap SQL over the live database.
 5. Create your owner account through Supabase Auth / the app.
 6. In the SQL Editor, replace the email below with your verified owner email and run:
 
@@ -59,7 +59,7 @@ Import the repository into Vercel or another Node.js host. Build command: `npm r
 - Public API integrations store endpoint URLs only; never paste private API keys into the public settings table.
 - Payment records are administrative records only. A real payment provider and verified webhook are required before accepting live payments.
 - Backup & Restore links to the Supabase backup workflow; the browser admin panel does not pretend to create database snapshots.
-- The app currently stores search history in browser memory only.
+- Signed-in users have search history saved to their own Supabase account; guest activity remains local to the current browser session.
 
 ## Privacy and safety
 This project is scoped to lawful research using public, non-sensitive technical information. It does not provide private-person tracking, account intrusion, password discovery, leaked personal-data dumps, or phone-number identity lookup. IP lookups are approximate network metadata and must not be treated as a person's precise location.
