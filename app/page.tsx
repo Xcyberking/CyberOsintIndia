@@ -47,6 +47,8 @@ export default function HomePage() {
   const [profileBio, setProfileBio] = useState("");
   const [profileSaving, setProfileSaving] = useState(false);
   const [profileMessage, setProfileMessage] = useState("");
+  const [announcements, setAnnouncements] = useState<{title:string;body:string;created_at:string}[]>([]);
+  const [noticeLoading, setNoticeLoading] = useState(false);
   const [authMessage, setAuthMessage] = useState("");
   const [mobileMenu, setMobileMenu] = useState(false);
   const [enabledToolSlugs, setEnabledToolSlugs] = useState<string[]>(["username-tracker","email-validator","ip-lookup","domain-lookup","url-safety","dns-lookup","reverse-image-search","social-media-analyzer","breach-self-check"]);
@@ -195,6 +197,15 @@ export default function HomePage() {
       setPage("Home");
     } else { setAuthMessage("Account created. Check your email to confirm your address."); }
   }
+  async function openNotifications() {
+    setPage("Notifications"); setNoticeLoading(true);
+    if (supabase) {
+      const { data } = await supabase.from("announcements").select("title,body,created_at").eq("active",true).order("created_at",{ascending:false}).limit(30);
+      setAnnouncements(data || []);
+    }
+    setNoticeLoading(false);
+  }
+
   async function saveProfile() {
     if (!supabase) return;
     setProfileSaving(true); setProfileMessage("");
@@ -270,7 +281,7 @@ export default function HomePage() {
           <div className="eyebrow">CYBERX INTELLIGENCE / {page.toUpperCase()}</div>
           <h1 className="page-title">{page === "Tool" ? selectedTool.title : page === "Home" ? "Dashboard" : page}</h1>
         </div>
-        <div className="top-actions"><button className="icon-btn" aria-label="Notifications"><Bell size={17}/></button>{userEmail ? <><button className="secondary-btn" onClick={()=>navTo("Profile")}><Edit3 size={14} style={{verticalAlign:"middle",marginRight:5}}/>Profile Edit</button><div className="avatar">{userEmail[0].toUpperCase()}</div></> : <><button className="secondary-btn" onClick={()=>{setAuthMode("login");setPage("Login");}}>Login</button><button className="primary-btn" onClick={()=>{setAuthMode("register");setPage("Register");}}>Register</button></>}</div>
+        <div className="top-actions"><button className="icon-btn" aria-label="Notifications" title="Notifications" onClick={()=>void openNotifications()}><Bell size={17}/></button>{userEmail ? <><button className="secondary-btn" onClick={()=>navTo("Profile")}><Edit3 size={14} style={{verticalAlign:"middle",marginRight:5}}/>Profile Edit</button><div className="avatar">{userEmail[0].toUpperCase()}</div></> : <><button className="secondary-btn" onClick={()=>{setAuthMode("login");setPage("Login");}}>Login</button><button className="primary-btn" onClick={()=>{setAuthMode("register");setPage("Register");}}>Register</button></>}</div>
       </header>
 
       {page === "Home" && <>
@@ -302,6 +313,8 @@ export default function HomePage() {
         {result !== null && <div className="result-box"><div style={{display:"flex",alignItems:"center",gap:8,color:"#0872f9",fontWeight:800,marginBottom:10}}><CheckCircle2 size={17}/> Result</div>{Array.isArray((result as {publicLinks?:unknown[]}).publicLinks) || Array.isArray((result as {publicSearchLinks?:unknown[]}).publicSearchLinks) || Array.isArray((result as {links?:unknown[]}).links) ? <><strong>{(result as {username?:string}).username ? "Public links for @"+(result as {username:string}).username : (result as {service?:string}).service || "Search options"}</strong>{(((result as {publicLinks?:[string,string][]}).publicLinks || (result as {publicSearchLinks?:[string,string][]}).publicSearchLinks || (result as {links?:[string,string][]}).links || [])).map(([name,url])=><div key={name} style={{padding:"8px 0",borderBottom:"1px solid #dceaff"}}><a href={url} target="_blank" rel="noreferrer" style={{color:"#075fe0",fontWeight:700}}>{name} — Open <ExternalLink size={13} style={{verticalAlign:"middle"}}/></a></div>)}<p className="notice">{(result as {note?:string}).note}</p></> : <pre style={{margin:0,fontFamily:"inherit",whiteSpace:"pre-wrap"}}>{JSON.stringify(result,null,2)}</pre>}</div>}
         <p className="notice"><ShieldCheck size={13} style={{verticalAlign:"middle",marginRight:5}}/>Use only information you are authorized to access. Results may be approximate or incomplete; verify important details with primary sources.</p>
       </div>}
+
+      {page === "Notifications" && <div className="content-panel" style={{maxWidth:"none"}}><div className="section-head" style={{marginTop:0}}><h3>Announcements & Notifications</h3><button className="text-link" onClick={()=>navTo("Home")}>Back to dashboard</button></div>{noticeLoading ? <div className="empty">Loading announcements…</div> : announcements.length ? <div className="tool-list">{announcements.map((item,i)=><div className="tool-row" key={i}><div className="tool-icon"><Bell size={18}/></div><span><strong>{item.title}</strong><small>{item.body} · {new Date(item.created_at).toLocaleString()}</small></span></div>)}</div> : <div className="empty">No new announcements.</div>}</div>}
 
       {page === "History" && <div className="content-panel" style={{maxWidth:"none"}}><div className="section-head" style={{marginTop:0}}><h3>Search history</h3><button className="text-link" onClick={()=>void clearHistory()}>Clear history</button></div>{history.length? <div className="tool-list">{history.map((item,i)=><div className="tool-row" key={i}><div className="tool-icon"><Clock3 size={18}/></div><span><strong>{item.title}</strong><small>{item.query} · {item.date}</small></span></div>)}</div>:<div className="empty">No searches yet. Your activity will show here.</div>}</div>}
 
