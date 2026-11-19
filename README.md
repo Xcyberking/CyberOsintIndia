@@ -4,8 +4,10 @@ Android-first public-source research workspace built with Next.js 15, React 19 a
 
 ## User application
 - Responsive mobile UI with dashboard, tools directory, history, profile and settings.
-- Public IP metadata lookup and public RDAP domain registration lookup.
-- Email syntax validation, URL structure inspection and direct links to public profile pages.
+- Public IP metadata lookup, public RDAP domain registration lookup and live DNS-over-HTTPS records (A, AAAA, MX, NS, TXT).
+- Email syntax and MX-record validation, URL/HTTPS structure inspection and public profile-link discovery.
+- Reverse-image search handoff to established search providers, social-profile link builder and official self-service breach-check handoff.
+- Login, registration, password reset, profile editing, optional Google/GitHub OAuth entry points, history sync and logout.
 - PWA manifest and app icon.
 - Supabase Auth with persistent sessions and per-user search history.
 
@@ -14,7 +16,7 @@ Open `/admin` after deployment. The panel includes:
 - Dashboard and database-backed count cards.
 - User roles, account status and credit adjustments.
 - Banned/suspended user review.
-- Tool enable/disable controls.
+- Tool enable/disable controls for implemented tools. The user directory reads the enabled flags from Supabase.
 - Premium plan creation and activation controls.
 - Payment record review and status updates (manual records only; no payment gateway is included).
 - Credit transaction history and referral review.
@@ -57,6 +59,9 @@ Import the repository into Vercel or another Node.js host. Build command: `npm r
 - Run the SQL files in the order listed above. The admin panel remains locked until the database schema and an admin role are configured.
 - Do not put Supabase service-role or secret keys in `NEXT_PUBLIC_*` variables or browser code.
 - Public API integrations store endpoint URLs only; never paste private API keys into the public settings table.
+- Google and GitHub OAuth buttons require those providers to be configured in Supabase Auth.
+- Reverse-image search opens third-party search providers; it does not upload or store user images.
+- Breach self-check opens the official Have I Been Pwned service; CyberX does not submit email addresses to breach databases.
 - Payment records are administrative records only. A real payment provider and verified webhook are required before accepting live payments.
 - Backup & Restore links to the Supabase backup workflow; the browser admin panel does not pretend to create database snapshots.
 - Signed-in users have search history saved to their own Supabase account; guest activity remains local to the current browser session.
