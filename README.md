@@ -27,7 +27,7 @@ Admin access is enforced using Supabase Auth, a database role check and Row Leve
 ## Setup
 1. Use Node.js 22 or newer.
 2. Copy `.env.example` to `.env.local`.
-3. Set `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY` (publishable key is preferred).
+3. Set `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`. The CyberOsintIndia project values are prefilled in `.env.example`.
 4. In the Supabase SQL Editor, run `supabase/schema.sql`, then `supabase/admin-suite.sql`.
 5. Create your owner account through Supabase Auth / the app.
 6. In the SQL Editor, replace the email below with your verified owner email and run:
@@ -51,7 +51,7 @@ npm run dev
 Open http://localhost:3000.
 
 ## Deploy
-Import the repository into Vercel or another Node.js host. Build command: `npm run build`; start command: `npm start`. Set the two Supabase environment variables in the hosting dashboard and redeploy.
+Import the repository into Vercel or another Node.js host. Build command: `npm run build`; start command: `npm start`. Set the two Supabase publishable environment variables in the hosting dashboard and redeploy.
 
 ## Important configuration notes
 - Run the SQL files in the order listed above. The admin panel remains locked until the database schema and an admin role are configured.
