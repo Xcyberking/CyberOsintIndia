@@ -23,6 +23,13 @@ const tools: ToolInfo[] = [
   { key: "social", title: "Social Media Analyzer", description: "Open public profile links for a username across platforms.", icon: Share2, category: "Public profiles" },
   { key: "breach", title: "Breach Self-Check", description: "Open an official service to check your own email safely.", icon: Fingerprint, category: "Account safety" }
 ];
+type RazorpayOptions = {
+  key:string;amount:number;currency:string;name:string;description:string;order_id:string;
+  prefill?:{email?:string};theme?:{color?:string};
+  handler:(response:{razorpay_payment_id:string;razorpay_order_id:string;razorpay_signature:string})=>void;
+  modal?:{ondismiss?:()=>void};
+};
+declare global { interface Window { Razorpay?: new (options:RazorpayOptions)=>{open:()=>void}; } }
 type HistoryItem = { title: string; query: string; date: string };
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -58,6 +65,8 @@ export default function HomePage() {
   const [referralCode,setReferralCode]=useState(""); const [referralCount,setReferralCount]=useState(0); const [referralCredits,setReferralCredits]=useState(0);
   const [plans,setPlans]=useState<{id:string;name:string;description:string;price_inr:number;credits:number;duration_days:number}[]>([]);
   const [paymentQr,setPaymentQr]=useState(""); const [paymentInstructions,setPaymentInstructions]=useState("");
+  const [gatewayEnabled,setGatewayEnabled]=useState(false);
+
   const [selectedPlan,setSelectedPlan]=useState(""); const [paymentReference,setPaymentReference]=useState(""); const [paymentProof,setPaymentProof]=useState<File|null>(null);
   const [storeMessage,setStoreMessage]=useState(""); const [savingPayment,setSavingPayment]=useState(false); const [role,setRole]=useState("user");
 
@@ -123,6 +132,49 @@ export default function HomePage() {
     });
     return () => { active = false; subscription.unsubscribe(); };
   }, []);
+
+
+  useEffect(()=>{
+    if(page!=="Store"||!userEmail||!supabase)return;
+    let active=true;
+    void supabase.functions.invoke("payment-gateway",{body:{action:"public_config"}}).then(({data,error})=>{
+      if(active)setGatewayEnabled(!error&&Boolean(data?.enabled));
+    });
+    return ()=>{active=false;};
+  },[page,userEmail]);
+
+  async function startGatewayPayment(planId:string){
+    if(!supabase)return;
+    setSavingPayment(true);setStoreMessage("");
+    try{
+      const {data:order,error}=await supabase.functions.invoke("payment-gateway",{body:{action:"create_order",plan_id:planId}});
+      if(error||order?.error)throw new Error(error?.message||order.error);
+      if(!order?.order_id||!order?.key_id||!order?.payment_record_id)throw new Error("Payment order response is incomplete.");
+      if(!window.Razorpay)await new Promise<void>((resolve,reject)=>{
+        const script=document.createElement("script");script.src="https://checkout.razorpay.com/v1/checkout.js";
+        script.onload=()=>resolve();script.onerror=()=>reject(new Error("Could not load Razorpay Checkout."));
+        document.body.appendChild(script);
+      });
+      if(!window.Razorpay)throw new Error("Razorpay Checkout is unavailable.");
+      const plan=plans.find(item=>item.id===planId);
+      const checkout=new window.Razorpay({
+        key:order.key_id,amount:order.amount,currency:order.currency,name:"CyberX OSINT",
+        description:plan?.name||order.description,order_id:order.order_id,prefill:{email:userEmail},theme:{color:"#0872f9"},
+        handler:async response=>{
+          const {data:verified,error:verifyError}=await supabase!.functions.invoke("payment-gateway",{body:{
+            action:"verify_payment",payment_record_id:order.payment_record_id,
+            razorpay_payment_id:response.razorpay_payment_id,razorpay_order_id:response.razorpay_order_id,
+            razorpay_signature:response.razorpay_signature
+          }});
+          if(verifyError||verified?.error)setStoreMessage(verifyError?.message||verified.error);
+          else {setStoreMessage("Payment verified successfully. Your plan and credits are now active.");const {data:{user}}=await supabase!.auth.getUser();if(user)await hydrateUser(user);}
+          setSavingPayment(false);
+        },
+        modal:{ondismiss:()=>{setSavingPayment(false);setStoreMessage("Payment window closed. No credits were added.");}}
+      });
+      checkout.open();
+    }catch(e){setStoreMessage(e instanceof Error?e.message:"Could not start payment.");setSavingPayment(false);}
+  }
 
   const goTool = (key: ToolKey) => { setTool(key); setPage("Tool"); setQuery(""); setResult(null); setError(""); };
   const addHistory = async (title: string, value: string) => {
@@ -429,13 +481,13 @@ export default function HomePage() {
       {page === "Notifications" && <div className="content-panel" style={{maxWidth:"none"}}><div className="section-head" style={{marginTop:0}}><h3>Announcements & Notifications</h3><button className="text-link" onClick={()=>navTo("Home")}>Back to dashboard</button></div>{noticeLoading ? <div className="empty">Loading announcements…</div> : announcements.length ? <div className="tool-list">{announcements.map((item,i)=><div className="tool-row" key={i}><div className="tool-icon"><Bell size={18}/></div><span><strong>{item.title}</strong><small>{item.body} · {new Date(item.created_at).toLocaleString()}</small></span></div>)}</div> : <div className="empty">No new announcements.</div>}</div>}
 
       {page === "Store" && <div className="content-panel" style={{maxWidth:"none"}}>
-        <div className="section-head" style={{marginTop:0}}><h3><Store size={18} style={{verticalAlign:"middle",marginRight:8}}/>CyberX Store</h3><span className="notice">Manual payment review</span></div>
+        <div className="section-head" style={{marginTop:0}}><h3><Store size={18} style={{verticalAlign:"middle",marginRight:8}}/>CyberX Store</h3><span className="notice">{gatewayEnabled?"Secure Razorpay checkout":"Manual payment review"}</span></div>
         {paymentQr&&<div style={{textAlign:"center",padding:16,background:"#fff",borderRadius:18,marginBottom:16}}><img src={paymentQr} alt="Admin payment QR" style={{width:220,maxWidth:"100%",height:"auto",objectFit:"contain"}}/><p style={{color:"#123",fontWeight:700}}>Scan to pay</p></div>}
         {paymentInstructions&&<p className="notice">{paymentInstructions}</p>}
         <div className="tool-grid">{plans.map(plan=><button className="tool-card" key={plan.id} onClick={()=>setSelectedPlan(plan.id)} style={{outline:selectedPlan===plan.id?"2px solid #0872f9":undefined}}><div className="tool-icon"><Crown size={20}/></div><strong>{plan.name}</strong><div className="stat-value">₹{plan.price_inr}</div><small>{plan.credits} credits · {plan.duration_days} days</small><small>{plan.description}</small></button>)}</div>
-        {selectedPlan&&<div style={{marginTop:18}}><label className="field-label">Payment reference / UTR</label><input className="field" value={paymentReference} onChange={e=>setPaymentReference(e.target.value)} placeholder="Enter UTR / transaction reference"/><label className="field-label">Payment screenshot (optional)</label><input className="field" type="file" accept="image/png,image/jpeg,image/webp" onChange={e=>setPaymentProof(e.target.files?.[0]||null)}/><button className="primary-btn" style={{marginTop:14}} disabled={savingPayment} onClick={()=>void submitPayment()}>{savingPayment?"Submitting…":"Submit payment for review"}</button></div>}
-        {storeMessage&&<p className={storeMessage.startsWith("Payment submitted")?"notice":"error"}>{storeMessage}</p>}
-        <p className="notice">Your plan and credits activate only after admin verification. No automatic payment is claimed.</p>
+        {selectedPlan&&(gatewayEnabled?<div style={{marginTop:18}}><button className="primary-btn" disabled={savingPayment} onClick={()=>void startGatewayPayment(selectedPlan)}>{savingPayment?"Opening secure checkout…":"Pay securely with Razorpay"}</button><p className="notice">Credits activate only after the server verifies the captured Razorpay payment.</p></div>:<div style={{marginTop:18}}><label className="field-label">Payment reference / UTR</label><input className="field" value={paymentReference} onChange={e=>setPaymentReference(e.target.value)} placeholder="Enter UTR / transaction reference"/><label className="field-label">Payment screenshot (optional)</label><input className="field" type="file" accept="image/png,image/jpeg,image/webp" onChange={e=>setPaymentProof(e.target.files?.[0]||null)}/><button className="primary-btn" style={{marginTop:14}} disabled={savingPayment} onClick={()=>void submitPayment()}>{savingPayment?"Submitting…":"Submit payment for review"}</button></div>)}
+        {storeMessage&&<p className={storeMessage.includes("successfully")||storeMessage.startsWith("Payment submitted")?"notice":"error"}>{storeMessage}</p>}
+        <p className="notice">{gatewayEnabled?"Online payment is verified server-side before credits are granted.":"Online gateway is disabled. Manual QR payments require admin review."}</p>
       </div>}
       {page === "History" && <div className="content-panel" style={{maxWidth:"none"}}><div className="section-head" style={{marginTop:0}}><h3>Search history</h3><button className="text-link" onClick={()=>void clearHistory()}>Clear history</button></div>{history.length? <div className="tool-list">{history.map((item,i)=><div className="tool-row" key={i}><div className="tool-icon"><Clock3 size={18}/></div><span><strong>{item.title}</strong><small>{item.query} · {item.date}</small></span></div>)}</div>:<div className="empty">No searches yet. Your activity will show here.</div>}</div>}
 
