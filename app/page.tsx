@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { createClient } from "@supabase/supabase-js";
 import {
   Activity, ArrowLeft, ArrowRight, Bell, CheckCircle2, ChevronRight, Clock3,
@@ -42,8 +42,50 @@ export default function HomePage() {
   const [mobileMenu, setMobileMenu] = useState(false);
 
   const selectedTool = useMemo(() => tools.find((item) => item.key === tool)!, [tool]);
+
+  async function hydrateUser(user: { id: string; email?: string | null }) {
+    if (!supabase) return;
+    const { data: profile } = await supabase.from("profiles").select("status").eq("id", user.id).maybeSingle();
+    if (profile?.status && profile.status !== "active") {
+      await supabase.auth.signOut();
+      setUserEmail("");
+      setAuthMessage("This account is currently suspended or restricted. Contact the site administrator.");
+      return;
+    }
+    setUserEmail(user.email || "");
+    const { data } = await supabase.from("search_history").select("tool_slug,input_summary,created_at")
+      .eq("user_id", user.id).order("created_at", { ascending: false }).limit(30);
+    if (data) setHistory(data.map((item) => ({
+      title: tools.find((entry) => entry.key === item.tool_slug)?.title || item.tool_slug,
+      query: item.input_summary,
+      date: new Date(item.created_at).toLocaleString()
+    })));
+  }
+
+  useEffect(() => {
+    if (!supabase) return;
+    let active = true;
+    void supabase.auth.getSession().then(({ data }) => {
+      if (active && data.session?.user) void hydrateUser(data.session.user);
+    });
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (!active) return;
+      if (!session) setUserEmail("");
+      else setUserEmail(session.user.email || "");
+    });
+    return () => { active = false; subscription.unsubscribe(); };
+  }, []);
+
   const goTool = (key: ToolKey) => { setTool(key); setPage("Tool"); setQuery(""); setResult(null); setError(""); };
-  const addHistory = (title: string, value: string) => setHistory((old) => [{ title, query: value, date: new Date().toLocaleString() }, ...old].slice(0, 30));
+  const addHistory = async (title: string, value: string) => {
+    setHistory((old) => [{ title, query: value, date: new Date().toLocaleString() }, ...old].slice(0, 30));
+    if (supabase) {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) await supabase.from("search_history").insert({
+        user_id: user.id, tool_slug: tool, input_summary: value.slice(0, 500), status: "success"
+      });
+    }
+  };
 
   async function runTool() {
     setBusy(true); setError(""); setResult(null);
@@ -80,7 +122,7 @@ export default function HomePage() {
           note: "These are direct public profile links. No accounts are scraped and no match is claimed."
         };
       }
-      setResult(data); addHistory(selectedTool.title, query.trim());
+      setResult(data); await addHistory(selectedTool.title, query.trim());
     } catch (e) {
       setError(e instanceof Error ? e.message : "Something went wrong.");
     } finally { setBusy(false); }
@@ -94,11 +136,14 @@ export default function HomePage() {
       : await supabase.auth.signUp({ email, password, options: { data: { name: displayName } } });
     if (response.error) setAuthMessage(response.error.message);
     else if (authMode === "register" && !response.data.session) setAuthMessage("Account created. Check your email to confirm your address.");
-    else { setUserEmail(response.data.user?.email || email); setPage("Home"); }
+    else if (response.data.user && response.data.session) {
+      await hydrateUser(response.data.user);
+      setPage("Home");
+    } else { setAuthMessage("Account created. Check your email to confirm your address."); }
   }
   async function logout() {
     if (supabase) await supabase.auth.signOut();
-    setUserEmail(""); setPage("Home");
+    setUserEmail(""); setHistory([]); setPage("Home");
   }
 
   const nav = [
@@ -179,7 +224,7 @@ export default function HomePage() {
 
       {page === "Profile" && <><div className="profile-card"><div className="profile-avatar"><User size={26}/></div><div><strong>{userEmail?userEmail.split("@")[0]:"CyberKing"}</strong><div className="notice" style={{margin:0}}>{userEmail||"Guest workspace"}</div></div></div><div className="content-panel"><h3 style={{marginTop:0}}>Account</h3><p className="notice">Sign in to connect your workspace to your own Supabase Auth project.</p><button className="primary-btn" onClick={()=>{setAuthMode("login");setPage("Login");}}> <LogIn size={15} style={{verticalAlign:"middle",marginRight:6}}/>Sign in / Register</button>{userEmail&&<button className="secondary-btn" style={{marginLeft:8}} onClick={logout}><LogOut size={15} style={{verticalAlign:"middle",marginRight:6}}/>Logout</button>}</div></>}
 
-      {page === "Settings" && <div className="content-panel"><h3 style={{marginTop:0}}>Settings & Privacy</h3><div className="tool-row"><div className="tool-icon"><ShieldCheck size={19}/></div><span><strong>Privacy-first research</strong><small>Only public technical information tools are enabled.</small></span><CheckCircle2 color="#12a56a"/></div><div className="tool-row"><div className="tool-icon"><Database size={19}/></div><span><strong>Data storage</strong><small>Search history stays in this browser session and is not uploaded.</small></span></div><div className="tool-row"><div className="tool-icon"><LockKeyhole size={19}/></div><span><strong>Authentication</strong><small>{supabase?"Supabase is configured.":"Supabase is not configured yet."}</small></span></div><div className="notice">To enable authentication, set the two public Supabase environment variables shown in .env.example. Never expose a service-role key in client-side code.</div><button className="secondary-btn" style={{marginTop:16}} onClick={()=>navTo("Profile")}>Account settings</button></div>}
+      {page === "Settings" && <div className="content-panel"><h3 style={{marginTop:0}}>Settings & Privacy</h3><div className="tool-row"><div className="tool-icon"><ShieldCheck size={19}/></div><span><strong>Privacy-first research</strong><small>Only public technical information tools are enabled.</small></span><CheckCircle2 color="#12a56a"/></div><div className="tool-row"><div className="tool-icon"><Database size={19}/></div><span><strong>Data storage</strong><small>Signed-in search history is saved securely to your Supabase account.</small></span></div><div className="tool-row"><div className="tool-icon"><LockKeyhole size={19}/></div><span><strong>Authentication</strong><small>{supabase?"Supabase is configured.":"Supabase is not configured yet."}</small></span></div><div className="notice">To enable authentication, set the two public Supabase environment variables shown in .env.example. Never expose a service-role key in client-side code.</div><button className="secondary-btn" style={{marginTop:16}} onClick={()=>navTo("Profile")}>Account settings</button></div>}
     </main>
 
     <nav className="mobile-nav">{[{label:"Home",icon:Home},{label:"Tools",icon:LayoutGrid},{label:"History",icon:History},{label:"Profile",icon:User}].map(({label,icon:Icon})=><button key={label} className={(page===label||(label==="Tools"&&page==="All Tools")||(label==="Tools"&&page==="Tool")?"active":"")} onClick={()=>navTo(label==="Tools"?"All Tools":label)}><Icon/><span>{label}</span></button>)}</nav>
