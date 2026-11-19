@@ -141,7 +141,7 @@ export default function HomePage() {
           ["LinkedIn", "https://www.linkedin.com/in/" + encodeURIComponent(handle) + "/"]
         ], note: "These are links only. The app does not scrape profiles or confirm identity." };
       } else if (tool === "breach") {
-        const valid = /^[^\\s@]+@[^\\s@]+\\.[^\\s@]{2,}$/.test(query.trim());
+        const valid = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(query.trim());
         if (!valid) throw new Error("Enter your own email address in a valid format.");
         data = { service: "Have I Been Pwned", email: query.trim(), links: [["Open official self-check", "https://haveibeenpwned.com/"]], note: "For privacy, this app does not submit your email or retrieve breach records. Open the official service yourself." };
       } else if (tool === "email") {
@@ -205,7 +205,9 @@ export default function HomePage() {
     }).eq("id", user.id);
     setProfileMessage(error ? error.message : "Profile updated successfully.");
     setProfileSaving(false);
-  }\n\n  async function clearHistory() {
+  }
+
+  async function clearHistory() {
     if (supabase) {
       const { data: { user } } = await supabase.auth.getUser();
       if (user) {
