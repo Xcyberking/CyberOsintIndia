@@ -84,7 +84,8 @@ begin
  return new;
 end $$;
 drop trigger if exists cyberx_profile_referral_rewards on auth.users;
-create trigger cyberx_profile_referral_rewards after insert on auth.users for each row execute function public.handle_profile_referral();
+drop trigger if exists zz_cyberx_profile_referral_rewards on auth.users;
+create trigger zz_cyberx_profile_referral_rewards after insert on auth.users for each row execute function public.handle_profile_referral();
 create or replace function public.admin_review_payment(p_payment_id uuid,p_approve boolean)
 returns void language plpgsql security definer set search_path='' as $$
 declare p public.payment_records%rowtype; plan public.premium_plans%rowtype;
