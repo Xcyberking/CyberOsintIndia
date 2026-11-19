@@ -1,10 +1,23 @@
 import { NextRequest, NextResponse } from "next/server";
 import { isIP } from "node:net";
 
+function isNonPublicAddress(value: string): boolean {
+  if (isIP(value) === 4) {
+    const octets = value.split(".").map(Number);
+    const [a,b] = octets;
+    return a === 0 || a === 10 || a === 127 || (a === 169 && b === 254) ||
+      (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168) ||
+      (a === 100 && b >= 64 && b <= 127) || a >= 224;
+  }
+  const normalized = value.toLowerCase();
+  return normalized === "::" || normalized === "::1" || normalized.startsWith("fc") ||
+    normalized.startsWith("fd") || normalized.startsWith("fe80:") || normalized.startsWith("ff");
+}
+
 export async function GET(request: NextRequest) {
   const raw = request.nextUrl.searchParams.get("address")?.trim() ?? "";
-  if (!raw || isIP(raw) === 0) {
-    return NextResponse.json({ error: "Enter a valid IPv4 or IPv6 address." }, { status: 400 });
+  if (!raw || isIP(raw) === 0 || isNonPublicAddress(raw)) {
+    return NextResponse.json({ error: "Enter a public IPv4 or IPv6 address. Private and reserved network ranges are not looked up." }, { status: 400 });
   }
   try {
     const response = await fetch("https://ipwho.is/" + encodeURIComponent(raw), { cache: "no-store", signal: AbortSignal.timeout(8000) });
