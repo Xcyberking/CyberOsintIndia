@@ -59,6 +59,7 @@ Import the repository into Vercel or another Node.js host. Build command: `npm r
 - Run the SQL files in the order listed above. The admin panel remains locked until the database schema and an admin role are configured.
 - Do not put Supabase service-role or secret keys in `NEXT_PUBLIC_*` variables or browser code.
 - Public API integrations store endpoint URLs only; never paste private API keys into the public settings table.
+- The current public tool registry and its safe activation defaults are documented in [`supabase/active-public-tools.sql`](supabase/active-public-tools.sql). The live Supabase project has already been updated; do not rerun unless intentionally reapplying the tool registry.
 - Google and GitHub OAuth buttons require those providers to be configured in Supabase Auth.
 - Reverse-image search opens third-party search providers; it does not upload or store user images.
 - Breach self-check opens the official Have I Been Pwned service; CyberX does not submit email addresses to breach databases.
