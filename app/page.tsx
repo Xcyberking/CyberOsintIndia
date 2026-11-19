@@ -52,7 +52,7 @@ export default function HomePage() {
   const [authMessage, setAuthMessage] = useState("");
   const [mobileMenu, setMobileMenu] = useState(false);
   const [enabledToolSlugs, setEnabledToolSlugs] = useState<string[]>(["username-tracker","email-validator","ip-lookup","domain-lookup","url-safety","dns-lookup","reverse-image-search","social-media-analyzer","breach-self-check"]);
-  const [dbTools,setDbTools]=useState<{slug:string;name:string;description:string;category:string;enabled:boolean;handler:string;credit_cost:number;input_label:string;result_note:string}[]>([]);
+  const [dbTools,setDbTools]=useState<{slug:string;name:string;description:string;category:string;enabled:boolean;handler:string;credit_cost:number;input_label:string;result_note:string;config?:Record<string,unknown>}[]>([]);
   const [username,setUsername]=useState(""); const [avatarUrl,setAvatarUrl]=useState("");
   const [credits,setCredits]=useState(0); const [planName,setPlanName]=useState("Free"); const [planExpires,setPlanExpires]=useState("");
   const [referralCode,setReferralCode]=useState(""); const [referralCount,setReferralCount]=useState(0); const [referralCredits,setReferralCredits]=useState(0);
@@ -62,10 +62,11 @@ export default function HomePage() {
   const [storeMessage,setStoreMessage]=useState(""); const [savingPayment,setSavingPayment]=useState(false); const [role,setRole]=useState("user");
 
   const toolSlug: Record<ToolKey,string> = { username:"username-tracker", email:"email-validator", ip:"ip-lookup", domain:"domain-lookup", url:"url-safety", dns:"dns-lookup", image:"reverse-image-search", social:"social-media-analyzer", breach:"breach-self-check" };
+  const iconFor=(name:string)=>({Globe:Globe2,Globe2,Search,MapPin:Compass,Mail,Wifi,Network,Shield:ShieldCheck,Image:ImageIcon,Users,User:UserRoundSearch,Database,Link:Link2,Wrench}[name]||Wrench);
   const visibleTools:ToolInfo[] = dbTools.length ? dbTools.filter(item=>item.enabled).map(item=>{
     const built=tools.find(t=>toolSlug[t.key]===item.slug);
     return built?{...built,title:item.name||built.title,description:item.description||built.description,category:item.category||built.category}
-      :{key:item.slug,title:item.name,description:item.description,category:item.category,icon:Wrench};
+      :{key:item.slug,title:item.name,description:item.description,category:item.category,icon:iconFor(String(item.config?.icon||"Wrench"))};
   }):tools.filter(item=>enabledToolSlugs.includes(toolSlug[item.key]));
   const selectedTool = useMemo(() => visibleTools.find(item=>item.key===tool)||tools.find(item=>item.key===tool)||{key:tool,title:dbTools.find(x=>x.slug===tool)?.name||tool,description:dbTools.find(x=>x.slug===tool)?.description||"Custom administrator tool",icon:Wrench,category:"Custom"},[tool,visibleTools,dbTools]);
 
@@ -99,7 +100,7 @@ export default function HomePage() {
     if (!supabase) return;
     let active = true;
     void Promise.all([
-      supabase.from("tools").select("slug,name,description,category,enabled,handler,credit_cost,input_label,result_note"),
+      supabase.from("tools").select("slug,name,description,category,enabled,handler,credit_cost,input_label,result_note,config"),
       supabase.from("premium_plans").select("id,name,description,price_inr,credits,duration_days").eq("is_active",true).order("price_inr"),
       supabase.from("site_settings").select("key,value").in("key",["payment_qr_url","payment_instructions"])
     ]).then(([t,p,s])=>{
@@ -154,6 +155,16 @@ export default function HomePage() {
         if (!response.ok) throw new Error((data as {error?:string}).error || "DNS lookup failed.");
       } else if (!tools.some(t=>t.key===tool)) {
         const custom=dbTools.find(t=>t.slug===tool); const handler=custom?.handler||"custom";
+        const configuredApi=String(custom?.config?.api_url||"").trim();
+        if(configuredApi){
+          if(!configuredApi.startsWith("https://")||(configuredApi.match(/\\{\\}/g)||[]).length!==1)throw new Error("This tool has an invalid API URL configuration.");
+          const target=configuredApi.replace("{}",encodeURIComponent(query.trim()));
+          const response=await fetch(target,{method:"GET",headers:{Accept:"application/json"}});
+          const raw=await response.text();let parsed:unknown;try{parsed=JSON.parse(raw);}catch{parsed={response:raw};}
+          if(!response.ok)throw new Error("API returned HTTP "+response.status+": "+(typeof parsed==="object"&&parsed!==null&&"error" in parsed?String((parsed as {error:unknown}).error):"Request failed"));
+          data=parsed;
+        }
+        else 
         const endpoints:Record<string,string>={ip:"/api/ip?address=",domain:"/api/domain?domain=",dns:"/api/dns?domain="};
         if(endpoints[handler]){const response=await fetch(endpoints[handler]+encodeURIComponent(query.trim()));data=await response.json();if(!response.ok)throw new Error((data as {error?:string}).error||"Lookup failed.");}
         else if(handler==="email"){
@@ -177,7 +188,7 @@ export default function HomePage() {
           if(u.protocol!=="https:"&&u.protocol!=="http:")throw new Error("Enter a public image URL.");
           data={imageUrl:u.href,search:"https://lens.google.com/uploadbyurl?url="+encodeURIComponent(u.href)};
         }
-        else throw new Error("This custom tool needs a supported backend handler configured by the administrator.");
+        else throw new Error("This custom tool needs an API URL or supported handler configured by the administrator.");
       } else if (tool === "image") {
         const imageUrl = new URL(query.trim());
         if (!["http:", "https:"].includes(imageUrl.protocol)) throw new Error("Enter a public HTTP or HTTPS image URL.");
@@ -386,7 +397,7 @@ export default function HomePage() {
         <label className="field-label">{dbTools.find(item=>item.slug===tool)?.input_label || (tool==="ip"?"Enter public IP address":tool==="domain"||tool==="dns"?"Enter domain name":tool==="email"||tool==="breach"?"Enter email address":tool==="username"||tool==="social"?"Enter public username":tool==="image"?"Enter public image URL":"Enter website URL")}</label>
         <div className="form-row"><input className="field" value={query} onChange={(e)=>setQuery(e.target.value)} placeholder={tool==="ip"?"8.8.8.8":tool==="domain"||tool==="dns"?"example.com":tool==="email"||tool==="breach"?"name@example.com":tool==="username"||tool==="social"?"public_username": "https://example.com/image.jpg"} onKeyDown={(e)=>{if(e.key==="Enter")runTool();}}/><button className="primary-btn" disabled={busy||!query.trim()} onClick={runTool}>{busy?"Checking…":tool==="ip"||tool==="dns"?"Lookup":tool==="domain"||tool==="url"?"Analyze":"Check"} <ArrowRight size={15} style={{verticalAlign:"middle"}}/></button></div>
         {error && <div className="error">{error}</div>}
-        {result !== null && <div className="result-box"><div style={{display:"flex",alignItems:"center",gap:8,color:"#0872f9",fontWeight:800,marginBottom:10}}><CheckCircle2 size={17}/> Result</div>{Array.isArray((result as {publicLinks?:unknown[]}).publicLinks) || Array.isArray((result as {publicSearchLinks?:unknown[]}).publicSearchLinks) || Array.isArray((result as {links?:unknown[]}).links) ? <><strong>{(result as {username?:string}).username ? "Public links for @"+(result as {username:string}).username : (result as {service?:string}).service || "Search options"}</strong>{(((result as {publicLinks?:[string,string][]}).publicLinks || (result as {publicSearchLinks?:[string,string][]}).publicSearchLinks || (result as {links?:[string,string][]}).links || [])).map(([name,url])=><div key={name} style={{padding:"8px 0",borderBottom:"1px solid #dceaff"}}><a href={url} target="_blank" rel="noreferrer" style={{color:"#075fe0",fontWeight:700}}>{name} — Open <ExternalLink size={13} style={{verticalAlign:"middle"}}/></a></div>)}<p className="notice">{(result as {note?:string}).note}</p></> : <pre style={{margin:0,fontFamily:"inherit",whiteSpace:"pre-wrap"}}>{JSON.stringify(result,null,2)}</pre>}</div>}
+        {result !== null && <div className="result-box"><div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8,color:"#0872f9",fontWeight:800,marginBottom:10}}><span><CheckCircle2 size={17}/> API Result</span><button className="secondary-btn" onClick={()=>{const blob=new Blob([JSON.stringify(result,null,2)],{type:"application/json"});const url=URL.createObjectURL(blob);const link=document.createElement("a");link.href=url;link.download=(selectedTool.key||"tool")+"-response.json";link.click();URL.revokeObjectURL(url);}}>Download JSON</button></div>{Array.isArray((result as {publicLinks?:unknown[]}).publicLinks) || Array.isArray((result as {publicSearchLinks?:unknown[]}).publicSearchLinks) || Array.isArray((result as {links?:unknown[]}).links) ? <><strong>{(result as {username?:string}).username ? "Public links for @"+(result as {username:string}).username : (result as {service?:string}).service || "Search options"}</strong>{(((result as {publicLinks?:[string,string][]}).publicLinks || (result as {publicSearchLinks?:[string,string][]}).publicSearchLinks || (result as {links?:[string,string][]}).links || [])).map(([name,url])=><div key={name} style={{padding:"8px 0",borderBottom:"1px solid #dceaff"}}><a href={url} target="_blank" rel="noreferrer" style={{color:"#075fe0",fontWeight:700}}>{name} — Open <ExternalLink size={13} style={{verticalAlign:"middle"}}/></a></div>)}<p className="notice">{(result as {note?:string}).note}</p></> : <div style={{padding:12,borderRadius:12,background:"#f5f8ff",color:"#14294d",marginBottom:12,overflowWrap:"anywhere"}}><strong>Response</strong><pre style={{margin:"8px 0 0",fontFamily:"inherit",whiteSpace:"pre-wrap"}}>{typeof result==="object"&&result!==null?Object.entries(result as Record<string,unknown>).map(([k,v])=>k+": "+(typeof v==="string"?v:JSON.stringify(v))).join("\\n"):String(result)}</pre></div><details><summary style={{cursor:"pointer",fontWeight:800,color:"#075fe0"}}>View raw JSON</summary><pre style={{margin:"10px 0 0",fontFamily:"monospace",whiteSpace:"pre-wrap",overflowWrap:"anywhere"}}>{JSON.stringify(result,null,2)}</pre></details>}</div>}
         <p className="notice"><ShieldCheck size={13} style={{verticalAlign:"middle",marginRight:5}}/>Use only information you are authorized to access. Results may be approximate or incomplete; verify important details with primary sources.</p>
       </div>}
 
