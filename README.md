@@ -42,7 +42,7 @@ where p.id = u.id
   and u.email = 'YOUR_VERIFIED_ADMIN_EMAIL';
 ```
 
-7. Sign in at `https://YOUR_DOMAIN/admin` using that account.
+7. Sign in at `https://cyber-osint-india.vercel.app/admin` using that account.
 
 ## Run locally
 ```bash
@@ -80,8 +80,8 @@ Configure these providers in Supabase Dashboard → Authentication → Sign In /
 - Google: enable Google and enter the Google OAuth Web Client ID and Client Secret.
 - GitHub: enable GitHub and enter the GitHub OAuth App Client ID and Client Secret.
 
-For each provider's OAuth application, use the Supabase provider callback URL shown in the Supabase provider settings as its authorized redirect/callback URL. In Supabase Dashboard → Authentication → URL Configuration, add the deployed app origin as the Site URL and allow `https://YOUR-DEPLOYED-DOMAIN/auth/callback` (plus the local callback URL only while developing).
+For each provider's OAuth application, use the Supabase provider callback URL shown in the Supabase provider settings as its authorized redirect/callback URL. In Supabase Dashboard → Authentication → URL Configuration, add https://cyber-osint-india.vercel.app as the Site URL and allow `https://cyber-osint-india.vercel.app/auth/callback` (plus the local callback URL only while developing).
 
-Google OAuth Web Client: add the deployed app origin to Authorized JavaScript origins; add the Supabase provider callback URL to Authorized redirect URIs. GitHub OAuth App: set the app homepage to the deployed app origin and Authorization callback URL to the Supabase provider callback URL.
+Google OAuth Web Client: add https://cyber-osint-india.vercel.app to Authorized JavaScript origins; add the Supabase provider callback URL to Authorized redirect URIs. GitHub OAuth App: set the app homepage to https://cyber-osint-india.vercel.app and Authorization callback URL to the Supabase provider callback URL.
 
 The admin account must already have `role='admin'` and `status='active'` in `public.profiles`. Do not promote users based on email text, provider name, or user-editable metadata. Keep OAuth client secrets only in the Supabase provider settings, never in `NEXT_PUBLIC_*` variables or browser code.
