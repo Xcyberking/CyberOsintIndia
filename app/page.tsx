@@ -7,10 +7,10 @@ import {
   Compass, Crown, Database, Globe2, History, Home, KeyRound, LayoutGrid,
   Link2, LockKeyhole, LogIn, LogOut, Mail, Menu, Moon, Search, Settings,
   Shield, ShieldCheck, Smartphone, Sparkles, User, UserRoundSearch, Users,
-  Wifi, X, Zap, Image as ImageIcon, Share2, Network, Fingerprint, ExternalLink, Save, Edit3, Github, Chrome
+  Wifi, X, Zap, Image as ImageIcon, Share2, Network, Fingerprint, ExternalLink, Save, Edit3, Github, Chrome, Store, Gift, Coins, Camera, Copy, CalendarDays, Wrench
 } from "lucide-react";
 
-type ToolKey = "ip" | "domain" | "username" | "email" | "url" | "dns" | "image" | "social" | "breach";
+type ToolKey = string;
 type ToolInfo = { key: ToolKey; title: string; description: string; icon: typeof Globe2; category: string };
 const tools: ToolInfo[] = [
   { key: "username", title: "Username Tracker", description: "Build direct links to public profile pages; no private account scraping.", icon: UserRoundSearch, category: "Public profiles" },
@@ -52,14 +52,26 @@ export default function HomePage() {
   const [authMessage, setAuthMessage] = useState("");
   const [mobileMenu, setMobileMenu] = useState(false);
   const [enabledToolSlugs, setEnabledToolSlugs] = useState<string[]>(["username-tracker","email-validator","ip-lookup","domain-lookup","url-safety","dns-lookup","reverse-image-search","social-media-analyzer","breach-self-check"]);
+  const [dbTools,setDbTools]=useState<{slug:string;name:string;description:string;category:string;enabled:boolean;handler:string;credit_cost:number;input_label:string;result_note:string}[]>([]);
+  const [username,setUsername]=useState(""); const [avatarUrl,setAvatarUrl]=useState("");
+  const [credits,setCredits]=useState(0); const [planName,setPlanName]=useState("Free"); const [planExpires,setPlanExpires]=useState("");
+  const [referralCode,setReferralCode]=useState(""); const [referralCount,setReferralCount]=useState(0); const [referralCredits,setReferralCredits]=useState(0);
+  const [plans,setPlans]=useState<{id:string;name:string;description:string;price_inr:number;credits:number;duration_days:number}[]>([]);
+  const [paymentQr,setPaymentQr]=useState(""); const [paymentInstructions,setPaymentInstructions]=useState("");
+  const [selectedPlan,setSelectedPlan]=useState(""); const [paymentReference,setPaymentReference]=useState(""); const [paymentProof,setPaymentProof]=useState<File|null>(null);
+  const [storeMessage,setStoreMessage]=useState(""); const [savingPayment,setSavingPayment]=useState(false); const [role,setRole]=useState("user");
 
   const toolSlug: Record<ToolKey,string> = { username:"username-tracker", email:"email-validator", ip:"ip-lookup", domain:"domain-lookup", url:"url-safety", dns:"dns-lookup", image:"reverse-image-search", social:"social-media-analyzer", breach:"breach-self-check" };
-  const visibleTools = tools.filter(item => enabledToolSlugs.includes(toolSlug[item.key]));
-  const selectedTool = useMemo(() => tools.find((item) => item.key === tool)!, [tool]);
+  const visibleTools:ToolInfo[] = dbTools.length ? dbTools.filter(item=>item.enabled).map(item=>{
+    const built=tools.find(t=>toolSlug[t.key]===item.slug);
+    return built?{...built,title:item.name||built.title,description:item.description||built.description,category:item.category||built.category}
+      :{key:item.slug,title:item.name,description:item.description,category:item.category,icon:Wrench};
+  }):tools.filter(item=>enabledToolSlugs.includes(toolSlug[item.key]));
+  const selectedTool = useMemo(() => visibleTools.find(item=>item.key===tool)||tools.find(item=>item.key===tool)||{key:tool,title:dbTools.find(x=>x.slug===tool)?.name||tool,description:dbTools.find(x=>x.slug===tool)?.description||"Custom administrator tool",icon:Wrench,category:"Custom"},[tool,visibleTools,dbTools]);
 
   async function hydrateUser(user: { id: string; email?: string | null; user_metadata?: Record<string, unknown> }) {
     if (!supabase) return;
-    const { data: profile } = await supabase.from("profiles").select("status,display_name,bio").eq("id", user.id).maybeSingle();
+    const { data: profile } = await supabase.from("profiles").select("status,display_name,bio,username,avatar_url,credits,role,plan_name,plan_expires_at,referral_code").eq("id", user.id).maybeSingle();
     if (profile?.status && profile.status !== "active") {
       await supabase.auth.signOut();
       setUserEmail("");
@@ -68,7 +80,7 @@ export default function HomePage() {
     }
     setUserEmail(user.email || "");
     setProfileName(profile?.display_name || (typeof user.user_metadata?.name === "string" ? user.user_metadata.name : user.email?.split("@")[0]) || "");
-    setProfileBio(profile?.bio || "");
+    setProfileBio(profile?.bio || ""); setUsername(profile?.username||""); setAvatarUrl(profile?.avatar_url||""); setCredits(profile?.credits||0); setRole(profile?.role||"user"); setPlanName(profile?.plan_name||"Free"); setPlanExpires(profile?.plan_expires_at||""); setReferralCode(profile?.referral_code||"");
     const { data } = await supabase.from("search_history").select("tool_slug,input_summary,created_at")
       .eq("user_id", user.id).order("created_at", { ascending: false }).limit(30);
     if (data) setHistory(data.map((item) => ({
@@ -76,13 +88,27 @@ export default function HomePage() {
       query: item.input_summary,
       date: new Date(item.created_at).toLocaleString()
     })));
+    const [{data:claims},{data:transactions}]=await Promise.all([
+      supabase.from("referral_claims").select("id,reward,status").eq("referrer_id",user.id),
+      supabase.from("credit_transactions").select("delta").eq("user_id",user.id).ilike("reason","%Referral reward%")
+    ]);
+    setReferralCount(claims?.length||0); setReferralCredits((transactions||[]).reduce((sum,row)=>sum+(row.delta||0),0));
   }
 
   useEffect(() => {
     if (!supabase) return;
     let active = true;
-    void supabase.from("tools").select("slug,enabled").then(({data}) => {
-      if (active && data) setEnabledToolSlugs(data.filter(row => row.enabled).map(row => row.slug));
+    void Promise.all([
+      supabase.from("tools").select("slug,name,description,category,enabled,handler,credit_cost,input_label,result_note"),
+      supabase.from("premium_plans").select("id,name,description,price_inr,credits,duration_days").eq("is_active",true).order("price_inr"),
+      supabase.from("site_settings").select("key,value").in("key",["payment_qr_url","payment_instructions"])
+    ]).then(([t,p,s])=>{
+      if(!active)return;
+      if(t.data){setDbTools(t.data as typeof dbTools);setEnabledToolSlugs(t.data.filter(row=>row.enabled).map(row=>row.slug));}
+      if(p.data)setPlans(p.data as typeof plans);
+      const settings=Object.fromEntries((s.data||[]).map(row=>[row.key,row.value]));
+      setPaymentQr(String(settings.payment_qr_url||"").replace(/^"|"$/g,""));
+      setPaymentInstructions(String(settings.payment_instructions||"").replace(/^"|"$/g,""));
     });
     void supabase.auth.getSession().then(({ data }) => {
       if (active && data.session?.user) void hydrateUser(data.session.user);
@@ -123,6 +149,16 @@ export default function HomePage() {
         const response = await fetch("/api/dns?domain=" + encodeURIComponent(host));
         data = await response.json();
         if (!response.ok) throw new Error((data as {error?:string}).error || "DNS lookup failed.");
+      } else if (!tools.some(t=>t.key===tool)) {
+        const custom=dbTools.find(t=>t.slug===tool); const handler=custom?.handler||"custom";
+        const endpoints:Record<string,string>={ip:"/api/ip?address=",domain:"/api/domain?domain=",dns:"/api/dns?domain="};
+        if(endpoints[handler]){const response=await fetch(endpoints[handler]+encodeURIComponent(query.trim()));data=await response.json();if(!response.ok)throw new Error((data as {error?:string}).error||"Lookup failed.");}
+        else if(handler==="email"){if(!/^[^\\s@]+@[^\\s@]+\\.[^\\s@]{2,}$/.test(query.trim()))throw new Error("Enter a valid email.");data={email:query.trim(),note:"Syntax validation only; mailbox ownership is not verified."};}
+        else if(handler==="url"){const parsed=new URL(query.match(/^https?:\\/\\//)?query:"https://"+query);data={url:parsed.href,protocol:parsed.protocol,hostname:parsed.hostname};}
+        else if(handler==="username"||handler==="social"){const handle=query.trim().replace(/^@/,"");if(!/^[a-zA-Z0-9._-]{2,30}$/.test(handle))throw new Error("Enter a public username.");data={username:handle,note:"Public links only; no scraping or identity claims."};}
+        else if(handler==="breach")data={service:"Have I Been Pwned",link:"https://haveibeenpwned.com/",note:"Use the official service to check your own email."};
+        else if(handler==="image"){const u=new URL(query.trim());data={imageUrl:u.href,search:"https://lens.google.com/uploadbyurl?url="+encodeURIComponent(u.href)};}
+        else throw new Error("This custom tool needs a supported backend handler configured by the administrator.");
       } else if (tool === "image") {
         const imageUrl = new URL(query.trim());
         if (!["http:", "https:"].includes(imageUrl.protocol)) throw new Error("Enter a public HTTP or HTTPS image URL.");
@@ -176,6 +212,7 @@ export default function HomePage() {
           note: "These are direct public profile links. No accounts are scraped and no match is claimed."
         };
       }
+      if(supabase){const {data:{user}}=await supabase.auth.getUser();if(user){const slug=toolSlug[tool]||tool;const {data:remaining,error:creditError}=await supabase.rpc("consume_tool_credit",{p_tool_slug:slug,p_query:query.trim()});if(creditError)throw new Error(creditError.message);if(typeof remaining==="number")setCredits(remaining);}}
       setResult(data); await addHistory(selectedTool.title, query.trim());
     } catch (e) {
       setError(e instanceof Error ? e.message : "Something went wrong.");
@@ -189,7 +226,7 @@ export default function HomePage() {
     if (!supabase) { setAuthMessage("Supabase is not configured. Check the public Supabase URL and publishable key in hosting settings."); return; }
     const response = authMode === "login"
       ? await supabase.auth.signInWithPassword({ email, password })
-      : await supabase.auth.signUp({ email, password, options: { data: { name: displayName } } });
+      : await supabase.auth.signUp({ email, password, options: { data: { name: displayName, referral_code: new URLSearchParams(window.location.search).get("ref") || "" } } });
     if (response.error) setAuthMessage(response.error.message);
     else if (authMode === "register" && !response.data.session) setAuthMessage("Account created. Check your email to confirm your address.");
     else if (response.data.user && response.data.session) {
@@ -212,10 +249,29 @@ export default function HomePage() {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) { setProfileMessage("Please sign in again."); setProfileSaving(false); return; }
     const { error } = await supabase.from("profiles").update({
-      display_name: profileName.trim(), bio: profileBio.trim(), updated_at: new Date().toISOString()
+      display_name: profileName.trim(), username: username.trim()||null, bio: profileBio.trim(), updated_at: new Date().toISOString()
     }).eq("id", user.id);
-    setProfileMessage(error ? error.message : "Profile updated successfully.");
+    setProfileMessage(error ? error.message : "Profile updated successfully."); if(!error)await hydrateUser(user);
     setProfileSaving(false);
+  }
+
+  async function uploadAvatar(file:File){
+    if(!supabase)return; const {data:{user}}=await supabase.auth.getUser(); if(!user)return;
+    if(!["image/jpeg","image/png","image/webp"].includes(file.type)||file.size>5*1024*1024){setProfileMessage("Choose a JPG, PNG or WebP image under 5 MB.");return;}
+    const path=user.id+"/avatar-"+Date.now()+"."+file.name.split(".").pop();
+    const {error}=await supabase.storage.from("cyberx-user-media").upload(path,file,{upsert:true,contentType:file.type});
+    if(error){setProfileMessage(error.message);return;}
+    const {data}=await supabase.storage.from("cyberx-user-media").createSignedUrl(path,31536000);
+    if(data?.signedUrl){const {error:e}=await supabase.from("profiles").update({avatar_url:data.signedUrl,updated_at:new Date().toISOString()}).eq("id",user.id);setProfileMessage(e?e.message:"Profile photo updated.");if(!e)setAvatarUrl(data.signedUrl);}
+  }
+  async function submitPayment(){
+    if(!supabase||!selectedPlan){setStoreMessage("Choose a plan first.");return;}
+    setSavingPayment(true);setStoreMessage("");const {data:{user}}=await supabase.auth.getUser();const plan=plans.find(p=>p.id===selectedPlan);
+    if(!user||!plan){setStoreMessage("Please sign in and select a valid plan.");setSavingPayment(false);return;}
+    let proofUrl="";
+    if(paymentProof){const path=user.id+"/payment-"+Date.now()+"."+paymentProof.name.split(".").pop();const {error:e}=await supabase.storage.from("cyberx-user-media").upload(path,paymentProof,{contentType:paymentProof.type});if(e){setStoreMessage(e.message);setSavingPayment(false);return;}const {data}=await supabase.storage.from("cyberx-user-media").createSignedUrl(path,2592000);proofUrl=data?.signedUrl||"";}
+    const {error}=await supabase.from("payment_records").insert({user_id:user.id,plan_id:plan.id,provider:"manual_qr",provider_reference:paymentReference.trim(),amount_inr:plan.price_inr,status:"pending",proof_url:proofUrl,user_note:"Plan: "+plan.name});
+    setStoreMessage(error?error.message:"Payment submitted. Credits activate only after admin verification.");setSavingPayment(false);
   }
 
   async function clearHistory() {
@@ -235,7 +291,7 @@ export default function HomePage() {
   }
 
   const nav = [
-    { label: "Home", icon: Home }, { label: "All Tools", icon: LayoutGrid },
+    { label: "Home", icon: Home }, { label: "All Tools", icon: LayoutGrid }, { label: "Store", icon: Store },
     { label: "History", icon: History }, { label: "Profile", icon: User },
     { label: "Settings", icon: Settings }
   ];
@@ -316,13 +372,22 @@ export default function HomePage() {
 
       {page === "Notifications" && <div className="content-panel" style={{maxWidth:"none"}}><div className="section-head" style={{marginTop:0}}><h3>Announcements & Notifications</h3><button className="text-link" onClick={()=>navTo("Home")}>Back to dashboard</button></div>{noticeLoading ? <div className="empty">Loading announcements…</div> : announcements.length ? <div className="tool-list">{announcements.map((item,i)=><div className="tool-row" key={i}><div className="tool-icon"><Bell size={18}/></div><span><strong>{item.title}</strong><small>{item.body} · {new Date(item.created_at).toLocaleString()}</small></span></div>)}</div> : <div className="empty">No new announcements.</div>}</div>}
 
+      {page === "Store" && <div className="content-panel" style={{maxWidth:"none"}}>
+        <div className="section-head" style={{marginTop:0}}><h3><Store size={18} style={{verticalAlign:"middle",marginRight:8}}/>CyberX Store</h3><span className="notice">Manual payment review</span></div>
+        {paymentQr&&<div style={{textAlign:"center",padding:16,background:"#fff",borderRadius:18,marginBottom:16}}><img src={paymentQr} alt="Admin payment QR" style={{width:220,maxWidth:"100%",height:"auto",objectFit:"contain"}}/><p style={{color:"#123",fontWeight:700}}>Scan to pay</p></div>}
+        {paymentInstructions&&<p className="notice">{paymentInstructions}</p>}
+        <div className="tool-grid">{plans.map(plan=><button className="tool-card" key={plan.id} onClick={()=>setSelectedPlan(plan.id)} style={{outline:selectedPlan===plan.id?"2px solid #0872f9":undefined}}><div className="tool-icon"><Crown size={20}/></div><strong>{plan.name}</strong><div className="stat-value">₹{plan.price_inr}</div><small>{plan.credits} credits · {plan.duration_days} days</small><small>{plan.description}</small></button>)}</div>
+        {selectedPlan&&<div style={{marginTop:18}}><label className="field-label">Payment reference / UTR</label><input className="field" value={paymentReference} onChange={e=>setPaymentReference(e.target.value)} placeholder="Enter UTR / transaction reference"/><label className="field-label">Payment screenshot (optional)</label><input className="field" type="file" accept="image/png,image/jpeg,image/webp" onChange={e=>setPaymentProof(e.target.files?.[0]||null)}/><button className="primary-btn" style={{marginTop:14}} disabled={savingPayment} onClick={()=>void submitPayment()}>{savingPayment?"Submitting…":"Submit payment for review"}</button></div>}
+        {storeMessage&&<p className={storeMessage.startsWith("Payment submitted")?"notice":"error"}>{storeMessage}</p>}
+        <p className="notice">Your plan and credits activate only after admin verification. No automatic payment is claimed.</p>
+      </div>}
       {page === "History" && <div className="content-panel" style={{maxWidth:"none"}}><div className="section-head" style={{marginTop:0}}><h3>Search history</h3><button className="text-link" onClick={()=>void clearHistory()}>Clear history</button></div>{history.length? <div className="tool-list">{history.map((item,i)=><div className="tool-row" key={i}><div className="tool-icon"><Clock3 size={18}/></div><span><strong>{item.title}</strong><small>{item.query} · {item.date}</small></span></div>)}</div>:<div className="empty">No searches yet. Your activity will show here.</div>}</div>}
 
-      {page === "Profile" && <><div className="profile-card"><div className="profile-avatar"><User size={26}/></div><div><strong>{profileName || userEmail?.split("@")[0] || "Guest workspace"}</strong><div className="notice" style={{margin:0}}>{userEmail||"Not signed in"}</div></div></div><div className="content-panel"><h3 style={{marginTop:0}}>Edit Profile</h3>{userEmail ? <><label className="field-label">Display name</label><input className="field" value={profileName} onChange={e=>setProfileName(e.target.value)} maxLength={60}/><label className="field-label">Bio</label><textarea className="field" value={profileBio} onChange={e=>setProfileBio(e.target.value)} maxLength={240} rows={4}/><button className="primary-btn" style={{marginTop:16}} disabled={profileSaving} onClick={()=>void saveProfile()}><Save size={15} style={{verticalAlign:"middle",marginRight:6}}/>{profileSaving?"Saving…":"Save profile"}</button>{profileMessage&&<p className={profileMessage.includes("successfully")?"notice":"error"}>{profileMessage}</p>}<button className="secondary-btn" style={{marginLeft:8}} onClick={logout}><LogOut size={15} style={{verticalAlign:"middle",marginRight:6}}/>Logout</button></> : <><p className="notice">Sign in or create an account to edit your profile and sync history.</p><button className="primary-btn" onClick={()=>{setAuthMode("login");setPage("Login");}}>Login</button><button className="secondary-btn" style={{marginLeft:8}} onClick={()=>{setAuthMode("register");setPage("Register");}}>Register</button></>}</div></>}
+      {page === "Profile" && <><div className="profile-card"><div className="profile-avatar">{avatarUrl?<img src={avatarUrl} alt="Profile" style={{width:"100%",height:"100%",borderRadius:"50%",objectFit:"cover"}}/>:<User size={26}/>}</div><div><strong>{profileName || userEmail?.split("@")[0] || "Guest workspace"}</strong><div className="notice" style={{margin:0}}>{userEmail||"Not signed in"}</div></div></div><div className="content-panel"><h3 style={{marginTop:0}}>Edit Profile</h3>{userEmail ? <><label className="field-label">Profile image</label><input className="field" type="file" accept="image/png,image/jpeg,image/webp" onChange={e=>{const file=e.target.files?.[0];if(file)void uploadAvatar(file);}}/><label className="field-label">Name</label><input className="field" value={profileName} onChange={e=>setProfileName(e.target.value)} maxLength={60}/><label className="field-label">Username</label><input className="field" value={username} onChange={e=>setUsername(e.target.value.replace(/[^a-zA-Z0-9_]/g,"").slice(0,24))} placeholder="your_username" maxLength={24}/><label className="field-label">Bio</label><textarea className="field" value={profileBio} onChange={e=>setProfileBio(e.target.value)} maxLength={240} rows={4}/><div className="stats" style={{marginTop:16}}><div className="stat-card"><div className="stat-label">CURRENT PLAN</div><div className="stat-value">{planName}</div><small>{planExpires?new Date(planExpires).toLocaleDateString():"No expiry"}</small></div><div className="stat-card"><div className="stat-label">AVAILABLE CREDITS</div><div className="stat-value">{credits}</div></div></div><div className="content-panel" style={{marginTop:16}}><h3><Gift size={18} style={{verticalAlign:"middle",marginRight:6}}/>Referral Program</h3><p className="notice">Rewards are configured by the administrator.</p><div className="tool-row"><strong>{referralCode||"Generating…"}</strong><button className="secondary-btn" onClick={()=>void navigator.clipboard.writeText(window.location.origin+"/?ref="+referralCode)}><Copy size={14}/> Copy invite link</button></div><div className="stats"><div className="stat-card"><div className="stat-label">REFERRALS</div><div className="stat-value">{referralCount}</div></div><div className="stat-card"><div className="stat-label">CREDITS EARNED</div><div className="stat-value">{referralCredits}</div></div></div></div><button className="primary-btn" style={{marginTop:16}} disabled={profileSaving} onClick={()=>void saveProfile()}><Save size={15} style={{verticalAlign:"middle",marginRight:6}}/>{profileSaving?"Saving…":"Save profile"}</button>{profileMessage&&<p className={profileMessage.includes("successfully")?"notice":"error"}>{profileMessage}</p>}<button className="secondary-btn" style={{marginLeft:8}} onClick={logout}><LogOut size={15} style={{verticalAlign:"middle",marginRight:6}}/>Logout</button></> : <><p className="notice">Sign in or create an account to edit your profile and sync history.</p><button className="primary-btn" onClick={()=>{setAuthMode("login");setPage("Login");}}>Login</button><button className="secondary-btn" style={{marginLeft:8}} onClick={()=>{setAuthMode("register");setPage("Register");}}>Register</button></>}</div></>}
 
       {page === "Settings" && <div className="content-panel"><h3 style={{marginTop:0}}>Settings & Privacy</h3><div className="tool-row"><div className="tool-icon"><ShieldCheck size={19}/></div><span><strong>Privacy-first research</strong><small>Only public technical information tools are enabled.</small></span><CheckCircle2 color="#12a56a"/></div><div className="tool-row"><div className="tool-icon"><Database size={19}/></div><span><strong>Data storage</strong><small>Signed-in search history is saved securely to your Supabase account.</small></span></div><div className="tool-row"><div className="tool-icon"><LockKeyhole size={19}/></div><span><strong>Authentication</strong><small>{supabase?"Supabase is configured.":"Supabase is not configured yet."}</small></span></div><div className="notice">To enable authentication, set the two public Supabase environment variables shown in .env.example. Never expose a service-role key in client-side code.</div><button className="secondary-btn" style={{marginTop:16}} onClick={()=>navTo("Profile")}>Account settings</button></div>}
     </main>
 
-    <nav className="mobile-nav">{[{label:"Home",icon:Home},{label:"Tools",icon:LayoutGrid},{label:"History",icon:History},{label:"Profile",icon:User}].map(({label,icon:Icon})=><button key={label} className={(page===label||(label==="Tools"&&page==="All Tools")||(label==="Tools"&&page==="Tool")?"active":"")} onClick={()=>navTo(label==="Tools"?"All Tools":label)}><Icon/><span>{label}</span></button>)}</nav>
+    <nav className="mobile-nav">{[{label:"Home",icon:Home},{label:"Tools",icon:LayoutGrid},{label:"Store",icon:Store},{label:"History",icon:History},{label:"Profile",icon:User}].map(({label,icon:Icon})=><button key={label} className={(page===label||(label==="Tools"&&page==="All Tools")||(label==="Tools"&&page==="Tool")?"active":"")} onClick={()=>navTo(label==="Tools"?"All Tools":label)}><Icon/><span>{label}</span></button>)}</nav>
   </div>;
 }
