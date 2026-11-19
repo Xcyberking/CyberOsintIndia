@@ -7,17 +7,21 @@ import {
   Compass, Crown, Database, Globe2, History, Home, KeyRound, LayoutGrid,
   Link2, LockKeyhole, LogIn, LogOut, Mail, Menu, Moon, Search, Settings,
   Shield, ShieldCheck, Smartphone, Sparkles, User, UserRoundSearch, Users,
-  Wifi, X, Zap
+  Wifi, X, Zap, Image as ImageIcon, Share2, Network, Fingerprint, ExternalLink, Save, Edit3
 } from "lucide-react";
 
-type ToolKey = "ip" | "domain" | "username" | "email" | "url";
+type ToolKey = "ip" | "domain" | "username" | "email" | "url" | "dns" | "image" | "social" | "breach";
 type ToolInfo = { key: ToolKey; title: string; description: string; icon: typeof Globe2; category: string };
 const tools: ToolInfo[] = [
-  { key: "username", title: "Username Search", description: "Create links to public profile pages for a handle you provide.", icon: UserRoundSearch, category: "Public profiles" },
-  { key: "email", title: "Email Validator", description: "Check email syntax and domain format only.", icon: Mail, category: "Validation" },
-  { key: "ip", title: "IP Lookup", description: "View approximate public network and IP metadata.", icon: Wifi, category: "Network" },
-  { key: "domain", title: "Domain Analyzer", description: "Review public registration and nameserver records.", icon: Globe2, category: "Web intelligence" },
-  { key: "url", title: "URL Inspector", description: "Inspect URL structure and basic connection indicators.", icon: ShieldCheck, category: "Web intelligence" }
+  { key: "username", title: "Username Tracker", description: "Build direct links to public profile pages; no private account scraping.", icon: UserRoundSearch, category: "Public profiles" },
+  { key: "email", title: "Email Validator", description: "Validate email format and inspect its public mail domain.", icon: Mail, category: "Validation" },
+  { key: "ip", title: "IP Lookup", description: "View approximate metadata for a public IP address.", icon: Wifi, category: "Network" },
+  { key: "domain", title: "Domain Analyzer", description: "Review public RDAP registration and nameserver records.", icon: Globe2, category: "Web intelligence" },
+  { key: "url", title: "Website Analyzer", description: "Inspect URL structure, HTTPS and hostname information.", icon: ShieldCheck, category: "Web intelligence" },
+  { key: "dns", title: "DNS Lookup", description: "Query public A, AAAA, MX, NS and TXT DNS records.", icon: Network, category: "Network" },
+  { key: "image", title: "Reverse Image Search", description: "Open public reverse-image search engines for an image URL.", icon: ImageIcon, category: "Media" },
+  { key: "social", title: "Social Media Analyzer", description: "Open public profile links for a username across platforms.", icon: Share2, category: "Public profiles" },
+  { key: "breach", title: "Breach Self-Check", description: "Open an official service to check your own email safely.", icon: Fingerprint, category: "Account safety" }
 ];
 type HistoryItem = { title: string; query: string; date: string };
 
@@ -38,6 +42,10 @@ export default function HomePage() {
   const [password, setPassword] = useState("");
   const [displayName, setDisplayName] = useState("");
   const [userEmail, setUserEmail] = useState("");
+  const [profileName, setProfileName] = useState("");
+  const [profileBio, setProfileBio] = useState("");
+  const [profileSaving, setProfileSaving] = useState(false);
+  const [profileMessage, setProfileMessage] = useState("");
   const [authMessage, setAuthMessage] = useState("");
   const [mobileMenu, setMobileMenu] = useState(false);
 
@@ -45,7 +53,7 @@ export default function HomePage() {
 
   async function hydrateUser(user: { id: string; email?: string | null }) {
     if (!supabase) return;
-    const { data: profile } = await supabase.from("profiles").select("status").eq("id", user.id).maybeSingle();
+    const { data: profile } = await supabase.from("profiles").select("status,display_name,bio").eq("id", user.id).maybeSingle();
     if (profile?.status && profile.status !== "active") {
       await supabase.auth.signOut();
       setUserEmail("");
@@ -53,6 +61,8 @@ export default function HomePage() {
       return;
     }
     setUserEmail(user.email || "");
+    setProfileName(profile?.display_name || user.user_metadata?.name || user.email?.split("@")[0] || "");
+    setProfileBio(profile?.bio || "");
     const { data } = await supabase.from("search_history").select("tool_slug,input_summary,created_at")
       .eq("user_id", user.id).order("created_at", { ascending: false }).limit(30);
     if (data) setHistory(data.map((item) => ({
@@ -71,7 +81,7 @@ export default function HomePage() {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       if (!active) return;
       if (!session) setUserEmail("");
-      else setUserEmail(session.user.email || "");
+      else void hydrateUser(session.user);
     });
     return () => { active = false; subscription.unsubscribe(); };
   }, []);
@@ -99,6 +109,34 @@ export default function HomePage() {
         const response = await fetch("/api/domain?domain=" + encodeURIComponent(query.trim()));
         data = await response.json();
         if (!response.ok) throw new Error((data as { error?: string }).error || "Lookup failed.");
+      } else if (tool === "dns") {
+        const host = query.trim().toLowerCase().replace(/^https?:\\/\\//, "").split("/")[0];
+        const response = await fetch("/api/dns?domain=" + encodeURIComponent(host));
+        data = await response.json();
+        if (!response.ok) throw new Error((data as {error?:string}).error || "DNS lookup failed.");
+      } else if (tool === "image") {
+        const imageUrl = new URL(query.trim());
+        if (!["http:", "https:"].includes(imageUrl.protocol)) throw new Error("Enter a public HTTP or HTTPS image URL.");
+        data = { imageUrl: imageUrl.href, publicSearchLinks: [
+          ["Google Lens", "https://lens.google.com/uploadbyurl?url=" + encodeURIComponent(imageUrl.href)],
+          ["Bing Visual Search", "https://www.bing.com/images/searchbyimage?cbir=sbi&imgurl=" + encodeURIComponent(imageUrl.href)],
+          ["TinEye", "https://tineye.com/search?url=" + encodeURIComponent(imageUrl.href)]
+        ], note: "The image URL is shared with the search provider only when you open its link. Use images you own or have permission to search." };
+      } else if (tool === "social") {
+        const handle = query.trim().replace(/^@/, "");
+        if (!/^[a-zA-Z0-9._-]{2,30}$/.test(handle)) throw new Error("Enter a public username (2–30 letters, numbers, dots, underscores or hyphens).");
+        data = { username: handle, publicLinks: [
+          ["Instagram", "https://www.instagram.com/" + encodeURIComponent(handle) + "/"],
+          ["Facebook", "https://www.facebook.com/" + encodeURIComponent(handle)],
+          ["X", "https://x.com/" + encodeURIComponent(handle)],
+          ["TikTok", "https://www.tiktok.com/@" + encodeURIComponent(handle)],
+          ["YouTube", "https://www.youtube.com/@" + encodeURIComponent(handle)],
+          ["LinkedIn", "https://www.linkedin.com/in/" + encodeURIComponent(handle) + "/"]
+        ], note: "These are links only. The app does not scrape profiles or confirm identity." };
+      } else if (tool === "breach") {
+        const valid = /^[^\\s@]+@[^\\s@]+\\.[^\\s@]{2,}$/.test(query.trim());
+        if (!valid) throw new Error("Enter your own email address in a valid format.");
+        data = { service: "Have I Been Pwned", email: query.trim(), links: [["Open official self-check", "https://haveibeenpwned.com/"]], note: "For privacy, this app does not submit your email or retrieve breach records. Open the official service yourself." };
       } else if (tool === "email") {
         const valid = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(query.trim());
         const domain = query.trim().split("@")[1] || "";
@@ -130,7 +168,7 @@ export default function HomePage() {
 
   async function authenticate() {
     setAuthMessage("");
-    if (!supabase) { setAuthMessage("Add NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY to enable secure sign-in."); return; }
+    if (!supabase) { setAuthMessage("Supabase is not configured. Check the public Supabase URL and publishable key in hosting settings."); return; }
     const response = authMode === "login"
       ? await supabase.auth.signInWithPassword({ email, password })
       : await supabase.auth.signUp({ email, password, options: { data: { name: displayName } } });
@@ -141,7 +179,7 @@ export default function HomePage() {
       setPage("Home");
     } else { setAuthMessage("Account created. Check your email to confirm your address."); }
   }
-  async function clearHistory() {
+  async function saveProfile() {\n    if (!supabase) return;\n    setProfileSaving(true); setProfileMessage("");\n    const { data: { user } } = await supabase.auth.getUser();\n    if (!user) { setProfileMessage("Please sign in again."); setProfileSaving(false); return; }\n    const { error } = await supabase.from("profiles").update({ display_name: profileName.trim(), bio: profileBio.trim(), updated_at: new Date().toISOString() }).eq("id", user.id);\n    setProfileMessage(error ? error.message : "Profile updated successfully.");\n    setProfileSaving(false);\n  }\n\n  async function clearHistory() {
     if (supabase) {
       const { data: { user } } = await supabase.auth.getUser();
       if (user) {
@@ -154,7 +192,7 @@ export default function HomePage() {
 
   async function logout() {
     if (supabase) await supabase.auth.signOut();
-    setUserEmail(""); setHistory([]); setPage("Home");
+    setUserEmail(""); setProfileName(""); setProfileBio(""); setHistory([]); setPage("Home");
   }
 
   const nav = [
@@ -198,18 +236,18 @@ export default function HomePage() {
           <div className="eyebrow">CYBERX INTELLIGENCE / {page.toUpperCase()}</div>
           <h1 className="page-title">{page === "Tool" ? selectedTool.title : page === "Home" ? "Dashboard" : page}</h1>
         </div>
-        <div className="top-actions"><button className="icon-btn" aria-label="Notifications"><Bell size={17}/></button><div className="avatar">{userEmail ? userEmail[0].toUpperCase() : "C"}</div></div>
+        <div className="top-actions"><button className="icon-btn" aria-label="Notifications"><Bell size={17}/></button>{userEmail ? <><button className="secondary-btn" onClick={()=>navTo("Profile")}><Edit3 size={14} style={{verticalAlign:"middle",marginRight:5}}/>Profile Edit</button><div className="avatar">{userEmail[0].toUpperCase()}</div></> : <><button className="secondary-btn" onClick={()=>{setAuthMode("login");setPage("Login");}}>Login</button><button className="primary-btn" onClick={()=>{setAuthMode("register");setPage("Register");}}>Register</button></>}</div>
       </header>
 
       {page === "Home" && <>
         <section className="welcome"><div><div className="eyebrow" style={{color:"#a8d9ff"}}>YOUR PUBLIC-SOURCE RESEARCH HUB</div><h2>Welcome back, {userEmail ? userEmail.split("@")[0] : "CyberKing"} 👋</h2><p>Explore public technical information with a clean, privacy-conscious workspace. Keep your research organized and transparent.</p></div><div className="welcome-tag"><Activity size={13} style={{verticalAlign:"middle",marginRight:6}}/> SYSTEM READY</div></section>
         <section className="stats">
-          <div className="stat-card"><div className="stat-icon"><LayoutGrid size={20}/></div><div><div className="stat-label">AVAILABLE TOOLS</div><div className="stat-value">05</div></div></div>
+          <div className="stat-card"><div className="stat-icon"><LayoutGrid size={20}/></div><div><div className="stat-label">AVAILABLE TOOLS</div><div className="stat-value">{tools.length.toString().padStart(2,"0")}</div></div></div>
           <div className="stat-card"><div className="stat-icon"><History size={20}/></div><div><div className="stat-label">YOUR SEARCHES</div><div className="stat-value">{history.length.toString().padStart(2,"0")}</div></div></div>
           <div className="stat-card"><div className="stat-icon"><ShieldCheck size={20}/></div><div><div className="stat-label">PRIVACY MODE</div><div className="stat-value" style={{fontSize:17}}>Enabled</div></div></div>
         </section>
         <div className="section-head"><h3>Quick Tools</h3><button className="text-link" onClick={()=>navTo("All Tools")}>View all <ArrowRight size={14} style={{verticalAlign:"middle"}}/></button></div>
-        <div className="tool-grid">{tools.slice(0,4).map((item)=>{const Icon=item.icon;return <button className="tool-card" key={item.key} onClick={()=>goTool(item.key)}><div className="tool-icon"><Icon size={21}/></div><strong>{item.title}</strong><small>{item.description}</small></button>})}</div>
+        <div className="tool-grid">{tools.slice(0,6).map((item)=>{const Icon=item.icon;return <button className="tool-card" key={item.key} onClick={()=>goTool(item.key)}><div className="tool-icon"><Icon size={21}/></div><strong>{item.title}</strong><small>{item.description}</small></button>})}</div>
         <section className="premium"><div><h3><Crown size={17} style={{verticalAlign:"middle",marginRight:6,color:"#ffd66b"}}/> CyberX Research Suite</h3><p>Organize public-source checks in one mobile-friendly place.</p></div><button className="primary-btn" onClick={()=>navTo("All Tools")}>Explore tools</button></section>
         <div className="section-head"><h3>Recent activity</h3><button className="text-link" onClick={()=>navTo("History")}>History <ArrowRight size={14} style={{verticalAlign:"middle"}}/></button></div>
         {history.length ? <div className="tool-list">{history.slice(0,3).map((item,i)=><div className="tool-row" key={i}><div className="tool-icon"><Clock3 size={18}/></div><span><strong>{item.title}</strong><small>{item.query} · {item.date}</small></span><ChevronRight size={17}/></div>)}</div> : <div className="panel empty">Your recent research will appear here after your first lookup.</div>}
@@ -224,16 +262,16 @@ export default function HomePage() {
       {page === "Tool" && <div className="content-panel">
         <div className="page-topline"><button className="back-btn" onClick={()=>navTo("All Tools")}><ArrowLeft size={19}/></button><div><strong>{selectedTool.title}</strong><div className="notice" style={{margin:0}}>{selectedTool.description}</div></div></div>
         <div className="tool-icon" style={{width:58,height:58,marginTop:22}}><PageIcon size={28}/></div>
-        <label className="field-label">{tool==="ip"?"Enter public IP address":tool==="domain"?"Enter domain name":tool==="email"?"Enter email address":tool==="username"?"Enter public username": "Enter website URL"}</label>
-        <div className="form-row"><input className="field" value={query} onChange={(e)=>setQuery(e.target.value)} placeholder={tool==="ip"?"8.8.8.8":tool==="domain"?"example.com":tool==="email"?"name@example.com":tool==="username"?"public_username":"https://example.com"} onKeyDown={(e)=>{if(e.key==="Enter")runTool();}}/><button className="primary-btn" disabled={busy||!query.trim()} onClick={runTool}>{busy?"Checking…":tool==="ip"?"Lookup":tool==="domain"?"Analyze":"Check"} <ArrowRight size={15} style={{verticalAlign:"middle"}}/></button></div>
+        <label className="field-label">{tool==="ip"?"Enter public IP address":tool==="domain"||tool==="dns"?"Enter domain name":tool==="email"||tool==="breach"?"Enter email address":tool==="username"||tool==="social"?"Enter public username":tool==="image"?"Enter public image URL":"Enter website URL"}</label>
+        <div className="form-row"><input className="field" value={query} onChange={(e)=>setQuery(e.target.value)} placeholder={tool==="ip"?"8.8.8.8":tool==="domain"||tool==="dns"?"example.com":tool==="email"||tool==="breach"?"name@example.com":tool==="username"||tool==="social"?"public_username": "https://example.com/image.jpg"} onKeyDown={(e)=>{if(e.key==="Enter")runTool();}}/><button className="primary-btn" disabled={busy||!query.trim()} onClick={runTool}>{busy?"Checking…":tool==="ip"||tool==="dns"?"Lookup":tool==="domain"||tool==="url"?"Analyze":"Check"} <ArrowRight size={15} style={{verticalAlign:"middle"}}/></button></div>
         {error && <div className="error">{error}</div>}
-        {result !== null && <div className="result-box"><div style={{display:"flex",alignItems:"center",gap:8,color:"#0872f9",fontWeight:800,marginBottom:10}}><CheckCircle2 size={17}/> Result</div>{Array.isArray((result as {publicLinks?:unknown[]}).publicLinks) ? <><strong>Public profile links for @{(result as {username:string}).username}</strong>{(result as {publicLinks:[string,string][]}).publicLinks.map(([name,url])=><div key={name} style={{padding:"8px 0",borderBottom:"1px solid #dceaff"}}><a href={url} target="_blank" rel="noreferrer" style={{color:"#075fe0",fontWeight:700}}>{name} — Open profile</a></div>)}<p className="notice">{(result as {note:string}).note}</p></> : <pre style={{margin:0,fontFamily:"inherit",whiteSpace:"pre-wrap"}}>{JSON.stringify(result,null,2)}</pre>}</div>}
+        {result !== null && <div className="result-box"><div style={{display:"flex",alignItems:"center",gap:8,color:"#0872f9",fontWeight:800,marginBottom:10}}><CheckCircle2 size={17}/> Result</div>{Array.isArray((result as {publicLinks?:unknown[]}).publicLinks) || Array.isArray((result as {publicSearchLinks?:unknown[]}).publicSearchLinks) || Array.isArray((result as {links?:unknown[]}).links) ? <><strong>{(result as {username?:string}).username ? "Public links for @"+(result as {username:string}).username : (result as {service?:string}).service || "Search options"}</strong>{(((result as {publicLinks?:[string,string][]}).publicLinks || (result as {publicSearchLinks?:[string,string][]}).publicSearchLinks || (result as {links?:[string,string][]}).links || [])).map(([name,url])=><div key={name} style={{padding:"8px 0",borderBottom:"1px solid #dceaff"}}><a href={url} target="_blank" rel="noreferrer" style={{color:"#075fe0",fontWeight:700}}>{name} — Open <ExternalLink size={13} style={{verticalAlign:"middle"}}/></a></div>)}<p className="notice">{(result as {note?:string}).note}</p></> : <pre style={{margin:0,fontFamily:"inherit",whiteSpace:"pre-wrap"}}>{JSON.stringify(result,null,2)}</pre>}</div>}
         <p className="notice"><ShieldCheck size={13} style={{verticalAlign:"middle",marginRight:5}}/>Use only information you are authorized to access. Results may be approximate or incomplete; verify important details with primary sources.</p>
       </div>}
 
       {page === "History" && <div className="content-panel" style={{maxWidth:"none"}}><div className="section-head" style={{marginTop:0}}><h3>Search history</h3><button className="text-link" onClick={()=>void clearHistory()}>Clear history</button></div>{history.length? <div className="tool-list">{history.map((item,i)=><div className="tool-row" key={i}><div className="tool-icon"><Clock3 size={18}/></div><span><strong>{item.title}</strong><small>{item.query} · {item.date}</small></span></div>)}</div>:<div className="empty">No searches yet. Your activity will show here.</div>}</div>}
 
-      {page === "Profile" && <><div className="profile-card"><div className="profile-avatar"><User size={26}/></div><div><strong>{userEmail?userEmail.split("@")[0]:"CyberKing"}</strong><div className="notice" style={{margin:0}}>{userEmail||"Guest workspace"}</div></div></div><div className="content-panel"><h3 style={{marginTop:0}}>Account</h3><p className="notice">Sign in to connect your workspace to your own Supabase Auth project.</p><button className="primary-btn" onClick={()=>{setAuthMode("login");setPage("Login");}}> <LogIn size={15} style={{verticalAlign:"middle",marginRight:6}}/>Sign in / Register</button>{userEmail&&<button className="secondary-btn" style={{marginLeft:8}} onClick={logout}><LogOut size={15} style={{verticalAlign:"middle",marginRight:6}}/>Logout</button>}</div></>}
+      {page === "Profile" && <><div className="profile-card"><div className="profile-avatar"><User size={26}/></div><div><strong>{profileName || userEmail?.split("@")[0] || "Guest workspace"}</strong><div className="notice" style={{margin:0}}>{userEmail||"Not signed in"}</div></div></div><div className="content-panel"><h3 style={{marginTop:0}}>Edit Profile</h3>{userEmail ? <><label className="field-label">Display name</label><input className="field" value={profileName} onChange={e=>setProfileName(e.target.value)} maxLength={60}/><label className="field-label">Bio</label><textarea className="field" value={profileBio} onChange={e=>setProfileBio(e.target.value)} maxLength={240} rows={4}/><button className="primary-btn" style={{marginTop:16}} disabled={profileSaving} onClick={()=>void saveProfile()}><Save size={15} style={{verticalAlign:"middle",marginRight:6}}/>{profileSaving?"Saving…":"Save profile"}</button>{profileMessage&&<p className={profileMessage.includes("successfully")?"notice":"error"}>{profileMessage}</p>}<button className="secondary-btn" style={{marginLeft:8}} onClick={logout}><LogOut size={15} style={{verticalAlign:"middle",marginRight:6}}/>Logout</button></> : <><p className="notice">Sign in or create an account to edit your profile and sync history.</p><button className="primary-btn" onClick={()=>{setAuthMode("login");setPage("Login");}}>Login</button><button className="secondary-btn" style={{marginLeft:8}} onClick={()=>{setAuthMode("register");setPage("Register");}}>Register</button></>}</div></>}
 
       {page === "Settings" && <div className="content-panel"><h3 style={{marginTop:0}}>Settings & Privacy</h3><div className="tool-row"><div className="tool-icon"><ShieldCheck size={19}/></div><span><strong>Privacy-first research</strong><small>Only public technical information tools are enabled.</small></span><CheckCircle2 color="#12a56a"/></div><div className="tool-row"><div className="tool-icon"><Database size={19}/></div><span><strong>Data storage</strong><small>Signed-in search history is saved securely to your Supabase account.</small></span></div><div className="tool-row"><div className="tool-icon"><LockKeyhole size={19}/></div><span><strong>Authentication</strong><small>{supabase?"Supabase is configured.":"Supabase is not configured yet."}</small></span></div><div className="notice">To enable authentication, set the two public Supabase environment variables shown in .env.example. Never expose a service-role key in client-side code.</div><button className="secondary-btn" style={{marginTop:16}} onClick={()=>navTo("Profile")}>Account settings</button></div>}
     </main>
