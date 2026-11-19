@@ -5,28 +5,39 @@ import { createClient } from "@supabase/supabase-js";
 import { parsePhoneNumberFromString } from "libphonenumber-js/max";
 import {
   ArrowLeft, ArrowRight, Bell, Check, ChevronRight, Chrome, CircleHelp, Crown, ExternalLink, Eye, EyeOff,
-  Fingerprint, Gem, Github, Globe2, History, Home, Image as ImageIcon, Info, Languages, LayoutGrid, Lock,
-  LogOut, Mail, Menu, Moon, Network, Search, Settings, Share2, ShieldCheck, Smartphone, Trash2, User,
-  UserRoundSearch, Wifi
+  Facebook, Fingerprint, Gem, Github, Globe2, History, Home, Image as ImageIcon, Info, Instagram, Languages,
+  LayoutGrid, Lock, LogOut, Mail, Menu, Moon, Music2, Network, Search, Send, Settings, Share2, ShieldCheck,
+  Smartphone, Trash2, Twitter, Upload, User, UserRoundSearch, Wifi, Youtube
 } from "lucide-react";
 import Logo from "./Logo";
+import "./extra.css";
 
 type ToolKey = "username" | "email" | "phone" | "ip" | "url" | "image" | "social" | "breach" | "domain" | "dns";
 type Tool = { key: ToolKey; slug: string; title: string; sub: string; icon: typeof Globe2; label: string; btn: string; group: "tools" | "searches" };
 const tools: Tool[] = [
-  { key: "username", slug: "username-tracker", title: "Username Tracker", sub: "Find public profile pages for a username", icon: UserRoundSearch, label: "Enter Username", btn: "Search", group: "searches" },
-  { key: "email", slug: "email-validator", title: "Email Lookup", sub: "Validate an email and inspect its mail domain", icon: Mail, label: "Enter Email Address", btn: "Check", group: "tools" },
-  { key: "phone", slug: "phone-lookup", title: "Phone Tracker", sub: "Number format, country and line type", icon: Smartphone, label: "Enter Phone (+91 98765 43210)", btn: "Lookup", group: "tools" },
-  { key: "ip", slug: "ip-lookup", title: "IP Lookup", sub: "Approximate metadata for a public IP", icon: Wifi, label: "Enter IP Address", btn: "Lookup", group: "tools" },
-  { key: "url", slug: "url-safety", title: "Website Analyzer", sub: "URL structure, HTTPS and DNS details", icon: Globe2, label: "Enter Website URL", btn: "Analyze", group: "tools" },
+  { key: "username", slug: "username-tracker", title: "Username Tracker", sub: "Find details about any username", icon: UserRoundSearch, label: "Enter Username", btn: "Search", group: "searches" },
+  { key: "email", slug: "email-validator", title: "Email Lookup", sub: "Get info from email address", icon: Mail, label: "Enter Email Address", btn: "Check", group: "tools" },
+  { key: "phone", slug: "phone-lookup", title: "Phone Tracker", sub: "Track phone number details", icon: Smartphone, label: "Enter Phone (+91 98765 43210)", btn: "Lookup", group: "tools" },
+  { key: "ip", slug: "ip-lookup", title: "IP Lookup", sub: "Get information about any IP", icon: Wifi, label: "Enter IP Address", btn: "Lookup", group: "tools" },
+  { key: "url", slug: "url-safety", title: "Website Analyzer", sub: "Check website details", icon: Globe2, label: "Enter Website URL", btn: "Analyze", group: "tools" },
+  { key: "image", slug: "reverse-image-search", title: "Reverse Image Search", sub: "Find similar images", icon: ImageIcon, label: "Paste Image URL", btn: "Search", group: "searches" },
+  { key: "social", slug: "social-media-analyzer", title: "Social Media Analyzer", sub: "Analyze social media profiles", icon: Share2, label: "Enter Profile URL", btn: "Analyze", group: "searches" },
+  { key: "breach", slug: "breach-self-check", title: "Data Breach Check", sub: "Check if your data is leaked", icon: Fingerprint, label: "Enter Your Email", btn: "Check", group: "searches" },
   { key: "domain", slug: "domain-lookup", title: "Domain Analyzer", sub: "Public RDAP registration records", icon: ShieldCheck, label: "Enter Domain Name", btn: "Analyze", group: "tools" },
-  { key: "dns", slug: "dns-lookup", title: "DNS Lookup", sub: "A, AAAA, MX, NS and TXT records", icon: Network, label: "Enter Domain Name", btn: "Lookup", group: "tools" },
-  { key: "image", slug: "reverse-image-search", title: "Reverse Image Search", sub: "Find similar images on the web", icon: ImageIcon, label: "Paste Image URL", btn: "Search", group: "searches" },
-  { key: "social", slug: "social-media-analyzer", title: "Social Media Analyzer", sub: "Open public profiles across platforms", icon: Share2, label: "Enter Username", btn: "Analyze", group: "searches" },
-  { key: "breach", slug: "breach-self-check", title: "Data Breach Check", sub: "Check if your own data is leaked", icon: Fingerprint, label: "Enter Your Email", btn: "Check", group: "searches" }
+  { key: "dns", slug: "dns-lookup", title: "DNS Lookup", sub: "A, AAAA, MX, NS and TXT records", icon: Network, label: "Enter Domain Name", btn: "Lookup", group: "tools" }
+];
+const homeKeys: ToolKey[] = ["username", "ip", "url", "image", "social", "email"];
+
+const platforms: { key: string; label: string; icon: typeof Globe2; hosts: string[]; url: (h: string) => string; color: string }[] = [
+  { key: "youtube", label: "YouTube", icon: Youtube, hosts: ["youtube.com", "youtu.be"], url: (h) => "https://www.youtube.com/@" + h, color: "#ff0000" },
+  { key: "instagram", label: "Instagram", icon: Instagram, hosts: ["instagram.com"], url: (h) => "https://www.instagram.com/" + h + "/", color: "#e1306c" },
+  { key: "tiktok", label: "TikTok", icon: Music2, hosts: ["tiktok.com"], url: (h) => "https://www.tiktok.com/@" + h, color: "#111" },
+  { key: "facebook", label: "Facebook", icon: Facebook, hosts: ["facebook.com", "fb.com"], url: (h) => "https://www.facebook.com/" + h, color: "#1877f2" },
+  { key: "x", label: "X", icon: Twitter, hosts: ["x.com", "twitter.com"], url: (h) => "https://x.com/" + h, color: "#111" },
+  { key: "telegram", label: "Telegram", icon: Send, hosts: ["t.me", "telegram.me"], url: (h) => "https://t.me/" + h, color: "#27a7e7" }
 ];
 
-type Res = { title: string; rows: [string, string][]; links: [string, string][]; note?: string };
+type Res = { title?: string; head?: { avatar: string; lines: string[] }; preview?: string; badge?: string; rows: [string, string][]; links: [string, string][]; note?: string };
 type HistoryItem = { key: string; title: string; query: string; date: string };
 type Plan = { id: string; name: string; price_inr: number; credits: number; duration_days: number; description: string | null };
 type Page = "Splash" | "Login" | "Register" | "Home" | "Tools" | "Tool" | "History" | "Premium" | "Settings" | "About" | "Notifications" | "Account" | "Privacy" | "Help";
@@ -55,11 +66,32 @@ async function getJson(url: string, fallback: string) {
   if (!r.ok) throw new Error((d as { error?: string }).error || fallback);
   return d as unknown;
 }
+function parseProfile(input: string, selected: string) {
+  const q = input.trim();
+  if (/^https?:\/\//i.test(q) || /^(www\.|m\.)?[a-z0-9-]+\.[a-z]{2,}\//i.test(q)) {
+    const u = new URL(/^https?:/i.test(q) ? q : "https://" + q);
+    const host = u.hostname.replace(/^(www|m)\./, "");
+    const p = platforms.find((x) => x.hosts.some((h) => host === h || host.endsWith("." + h)));
+    if (!p) throw new Error("Unsupported platform. Use a YouTube, Instagram, TikTok, Facebook, X or Telegram URL.");
+    const seg = u.pathname.split("/").filter(Boolean);
+    let h = seg[0] || "";
+    if (["in", "user", "channel", "c"].includes(h)) h = seg[1] || "";
+    h = h.replace(/^@/, "");
+    if (!handleOk(h) || h === "profile.php") throw new Error("Could not read a username from that URL.");
+    return { p, h };
+  }
+  const p = platforms.find((x) => x.key === selected);
+  if (!p) throw new Error("Pick a platform above, or paste a full profile URL.");
+  const h = q.replace(/^@/, "");
+  if (!handleOk(h)) throw new Error("Enter a public username (2–30 letters, numbers, dots, underscores or hyphens).");
+  return { p, h };
+}
 
 export default function HomePage() {
   const [page, setPage] = useState<Page>("Splash");
   const [tool, setTool] = useState<ToolKey>("ip");
   const [query, setQuery] = useState("");
+  const [platform, setPlatform] = useState("");
   const [res, setRes] = useState<Res | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -89,6 +121,7 @@ export default function HomePage() {
   const [helpMsg, setHelpMsg] = useState("");
 
   const visibleTools = useMemo(() => tools.filter((t) => !disabledSlugs.includes(t.slug)), [disabledSlugs]);
+  const homeTools = useMemo(() => homeKeys.map((k) => visibleTools.find((t) => t.key === k)).filter((t): t is Tool => !!t), [visibleTools]);
   const selected = tools.find((t) => t.key === tool)!;
   const name = profileName || userEmail.split("@")[0] || "Guest";
 
@@ -142,7 +175,7 @@ export default function HomePage() {
   }, []);
 
   const go = (p: Page) => { setPage(p); window.scrollTo(0, 0); };
-  const openTool = (k: ToolKey) => { setTool(k); setQuery(""); setRes(null); setError(""); go("Tool"); };
+  const openTool = (k: ToolKey) => { setTool(k); setQuery(""); setPlatform(""); setRes(null); setError(""); go("Tool"); };
   const needLogin = (m: "login" | "register") => { setAuthMode(m); setAuthMessage(""); go(m === "login" ? "Login" : "Register"); };
 
   async function addHistory(value: string) {
@@ -160,18 +193,18 @@ export default function HomePage() {
       let out: Res;
       if (tool === "ip") {
         const d = await getJson("/api/ip?address=" + encodeURIComponent(q), "Lookup failed.");
-        out = { title: "Results", rows: toRows(d), links: [], note: noteOf(d) };
+        out = { rows: toRows(d), links: [], note: noteOf(d) };
       } else if (tool === "domain") {
         const d = await getJson("/api/domain?domain=" + encodeURIComponent(q), "Lookup failed.");
-        out = { title: "Results", rows: toRows(d), links: [], note: noteOf(d) };
+        out = { rows: toRows(d), links: [], note: noteOf(d) };
       } else if (tool === "dns") {
         const host = q.toLowerCase().replace(/^https?:\/\//, "").split("/")[0];
         const d = await getJson("/api/dns?domain=" + encodeURIComponent(host), "DNS lookup failed.");
-        out = { title: "Results", rows: toRows(d), links: [], note: noteOf(d) };
+        out = { rows: toRows(d), links: [], note: noteOf(d) };
       } else if (tool === "phone") {
         const p = parsePhoneNumberFromString(q);
         if (!p || !p.isPossible()) throw new Error("Enter the number with its country code, e.g. +91 98765 43210.");
-        out = { title: "Results", rows: [
+        out = { rows: [
           ["International", p.formatInternational()], ["National", p.formatNational()],
           ["Country", p.country || "Unknown"], ["Calling code", "+" + p.countryCallingCode],
           ["Valid number", p.isValid() ? "Yes" : "No"], ["Line type", pretty((p.getType() || "unknown").toLowerCase())]
@@ -181,34 +214,40 @@ export default function HomePage() {
         const domain = q.split("@")[1];
         const d = await getJson("/api/dns?domain=" + encodeURIComponent(domain), "Mail domain lookup failed.");
         const mx = (d as { records?: { type: string; records: { value: string }[] }[] }).records?.find((r) => r.type === "MX")?.records || [];
-        out = { title: "Results", rows: [["Email", q], ["Syntax", "Valid format"], ["Domain", domain], ["MX records", mx.map((m) => m.value).join(", ") || "None found"]], links: [], note: "MX records show mail routing only; they do not verify the mailbox or identify its owner." };
+        out = { rows: [["Email", q], ["Syntax", "Valid format"], ["Domain", domain], ["MX records", mx.map((m) => m.value).join(", ") || "None found"]], links: [], note: "MX records show mail routing only; they do not verify the mailbox or identify its owner." };
       } else if (tool === "url") {
-        const u = new URL(/^https?:\/\//.test(q) ? q : "https://" + q);
-        if (!["http:", "https:"].includes(u.protocol)) throw new Error("Only HTTP and HTTPS website URLs are supported.");
-        const r = await fetch("/api/dns?domain=" + encodeURIComponent(u.hostname));
-        const d = await r.json();
-        out = { title: "Results", rows: [["Website", u.href], ["Protocol", u.protocol.replace(":", "").toUpperCase()], ["Hostname", u.hostname], ["Port", u.port || "Default"], ["SSL", u.protocol === "https:" ? "HTTPS enabled" : "HTTP only"], ["DNS", r.ok ? fmt((d as { records?: unknown }).records) : fmt((d as { error?: string }).error)]], links: [], note: "Checks URL structure and public DNS only; it is not a malware or reputation verdict." };
+        const d = await getJson("/api/site?url=" + encodeURIComponent(q), "Website check failed.") as { ssl?: string };
+        out = { rows: toRows(d), links: [], note: noteOf(d), badge: d.ssl === "Valid" ? "Secure Website" : undefined };
       } else if (tool === "image") {
         const u = new URL(q);
         if (!["http:", "https:"].includes(u.protocol)) throw new Error("Enter a public HTTP or HTTPS image URL.");
-        out = { title: "Search with", rows: [], links: [
+        out = { title: "Search with", preview: u.href, rows: [], links: [
           ["Google Lens", "https://lens.google.com/uploadbyurl?url=" + encodeURIComponent(u.href)],
           ["Bing Visual Search", "https://www.bing.com/images/searchbyimage?cbir=sbi&imgurl=" + encodeURIComponent(u.href)],
           ["TinEye", "https://tineye.com/search?url=" + encodeURIComponent(u.href)]
         ], note: "The image URL is shared with a provider only when you open its link. Use images you own or may search." };
       } else if (tool === "breach") {
         if (!emailOk(q)) throw new Error("Enter your own email address in a valid format.");
-        out = { title: "Official check", rows: [["Service", "Have I Been Pwned"]], links: [["Open official self-check", "https://haveibeenpwned.com/"]], note: "Your email is not submitted by this app. Open the official service and enter it yourself." };
+        out = { rows: [["Service", "Have I Been Pwned"]], links: [["Open official self-check", "https://haveibeenpwned.com/"]], note: "Your email is not submitted by this app. Open the official service and enter it yourself." };
+      } else if (tool === "social") {
+        const { p, h } = parseProfile(q, platform);
+        const url = p.url(encodeURIComponent(h));
+        out = { title: "Profile", rows: [["Platform", p.label], ["Username", h], ["Profile URL", url]], links: [["Open " + p.label + " profile", url]], note: "Link analysis only. Nothing is scraped and no identity or follower data is claimed." };
       } else {
         const h = q.replace(/^@/, "");
         if (!handleOk(h)) throw new Error("Enter a public username (2–30 letters, numbers, dots, underscores or hyphens).");
         const e = encodeURIComponent(h);
-        const all: [string, string][] = [
-          ["GitHub", "https://github.com/" + e], ["Instagram", "https://www.instagram.com/" + e + "/"], ["X", "https://x.com/" + e],
-          ["TikTok", "https://www.tiktok.com/@" + e], ["Reddit", "https://www.reddit.com/user/" + e + "/"], ["YouTube", "https://www.youtube.com/@" + e],
-          ["Facebook", "https://www.facebook.com/" + e], ["LinkedIn", "https://www.linkedin.com/in/" + e + "/"], ["Telegram", "https://t.me/" + e]
-        ];
-        out = { title: "Public profile links", rows: [["Username", h]], links: all, note: "Direct links only. Nothing is scraped and no match or identity is claimed." };
+        out = {
+          head: { avatar: h[0].toUpperCase(), lines: ["User: " + h, "Public profile links: 9"] },
+          title: "More Info",
+          rows: [["Username", h]],
+          links: [
+            ["GitHub", "https://github.com/" + e], ["Instagram", "https://www.instagram.com/" + e + "/"], ["X", "https://x.com/" + e],
+            ["TikTok", "https://www.tiktok.com/@" + e], ["Reddit", "https://www.reddit.com/user/" + e + "/"], ["YouTube", "https://www.youtube.com/@" + e],
+            ["Facebook", "https://www.facebook.com/" + e], ["LinkedIn", "https://www.linkedin.com/in/" + e + "/"], ["Telegram", "https://t.me/" + e]
+          ],
+          note: "Direct links only. Nothing is scraped and no match or identity is claimed."
+        };
       }
       setRes(out);
       await addHistory(q);
@@ -297,13 +336,16 @@ export default function HomePage() {
     </nav>
   );
   const ToolIcon = selected.icon;
+  const histIcon = (k: string) => tools.find((t) => t.key === k)?.icon || Search;
 
   if (page === "Splash") return (
     <div className="phone"><div className="splash center">
-      <Logo size={150} />
+      <span className="big"><Logo size={150} /></span>
       <div className="brandname">Cyber<b>X</b> OSINT</div>
       <div className="tag">Explore • Analyze • Investigate</div>
+      <div className="ult">Your Ultimate<br />OSINT Toolkit</div>
       <div className="bar"><i /></div>
+      <div className="ldg">Loading...</div>
     </div></div>
   );
 
@@ -311,18 +353,18 @@ export default function HomePage() {
     const reg = authMode === "register";
     return (
       <div className="phone">
-        {hdr("", "Home")}
+        {hdr("", "Home", <button className="icon" aria-label="Toggle theme" onClick={() => setDark(!dark)}><Moon size={18} /></button>)}
         <div className="authbox center">
-          <Logo size={92} />
-          <div className="brandname" style={{ fontSize: 28 }}>Cyber<b>X</b> OSINT</div>
-          <div className="muted" style={{ marginBottom: 14 }}>{reg ? "Create New Account" : "Login to your account"}</div>
+          <Logo size={100} />
+          <div className="brandname" style={{ fontSize: 30 }}>Cyber<b>X</b> OSINT</div>
+          <div className="muted" style={{ marginBottom: 14, fontSize: 14 }}>{reg ? "Create New Account" : "Login to your account"}</div>
           {reg && <div className="fd"><User size={18} /><input placeholder="Username" value={username} onChange={(e) => setUsername(e.target.value)} /></div>}
           <div className="fd"><Mail size={18} /><input type="email" placeholder="Email Address" value={email} onChange={(e) => setEmail(e.target.value)} /></div>
           <div className="fd"><Lock size={18} /><input type={showPw ? "text" : "password"} placeholder="Password" value={password} onChange={(e) => setPassword(e.target.value)} /><button aria-label="Show password" onClick={() => setShowPw(!showPw)}>{showPw ? <EyeOff size={18} /> : <Eye size={18} />}</button></div>
-          {reg && <div className="fd"><Lock size={18} /><input type={showPw ? "text" : "password"} placeholder="Confirm Password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} /></div>}
+          {reg && <div className="fd"><Lock size={18} /><input type={showPw ? "text" : "password"} placeholder="Confirm Password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} /><button aria-label="Show password" onClick={() => setShowPw(!showPw)}>{showPw ? <EyeOff size={18} /> : <Eye size={18} />}</button></div>}
           <button className="btn gap" onClick={authenticate}>{reg ? "Register" : "Login"}</button>
           {authMessage && <p className={authMessage.startsWith("Account created") || authMessage.startsWith("Password reset") ? "okm" : "err"}>{authMessage}</p>}
-          {!reg && <button className="link" style={{ marginTop: 10 }} onClick={forgot}>Forgot Password?</button>}
+          {!reg && <button className="link authlink" onClick={forgot}>Forgot Password?</button>}
           {!reg && <>
             <div className="divider">OR</div>
             <button className="btn alt" onClick={() => oauth("google")}><Chrome size={17} /> Continue with Google</button>
@@ -334,24 +376,37 @@ export default function HomePage() {
     );
   }
 
-  if (page === "Tool") return (
-    <div className="phone">
-      {hdr(selected.title, "Tools")}
-      <div className="hero"><div className="ring"><ToolIcon size={46} /></div></div>
-      <input className="wf" value={query} placeholder={selected.label} onChange={(e) => setQuery(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && query.trim()) void runTool(); }} />
-      <button className="btn" disabled={busy || !query.trim()} onClick={runTool}>{busy ? "Checking…" : selected.btn}</button>
-      {error && <p className="err">{error}</p>}
-      {res && (
-        <div className="res">
-          <h3>{res.title}</h3>
-          {res.rows.map(([k, v]) => <div className="kv" key={k}><span>{k}</span><b>{v}</b></div>)}
-          {res.links.map(([n, u]) => <a className="lk" key={n} href={u} target="_blank" rel="noreferrer noopener">{n}<ExternalLink size={15} /></a>)}
-          {res.note && <p className="note">{res.note}</p>}
-        </div>
-      )}
-      <p className="note">Use only information you are authorized to access. Results may be approximate or incomplete.</p>
-    </div>
-  );
+  if (page === "Tool") {
+    const input = <input className="wf" value={query} placeholder={selected.label} onChange={(e) => setQuery(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && query.trim()) void runTool(); }} />;
+    return (
+      <div className="phone">
+        {hdr(selected.title, "Tools")}
+        {tool === "social" ? (
+          <div className="pg">{platforms.map((p) => { const I = p.icon; return <button key={p.key} className={platform === p.key ? "on" : ""} onClick={() => setPlatform(p.key)}><I size={30} color={p.color} />{p.label}</button>; })}</div>
+        ) : tool === "image" ? (
+          <div className="upload"><Upload size={40} /><b>Paste Image URL</b><small>Public http(s) link to the image. Files are never uploaded by this app.</small>{input}</div>
+        ) : (
+          <div className="hero"><div className="ring"><ToolIcon size={54} /></div></div>
+        )}
+        {tool !== "image" && input}
+        <button className="btn" disabled={busy || !query.trim()} onClick={runTool}>{busy ? "Checking…" : selected.btn}</button>
+        {error && <p className="err">{error}</p>}
+        {res && <>
+          <h3 className="rh">Results</h3>
+          <div className="res">
+            {res.head && <div className="rhead"><span className="av">{res.head.avatar}</span><div>{res.head.lines.map((l) => <div key={l}>{l}</div>)}</div></div>}
+            {res.preview && <img className="prev" src={res.preview} alt="Searched image" />}
+            {res.title && <h4>{res.title}</h4>}
+            {res.rows.map(([k, v]) => <div className="kv" key={k}><span>{k}</span><b>{v}</b></div>)}
+            {res.links.map(([n, u]) => <a className="lk" key={n} href={u} target="_blank" rel="noreferrer noopener">{n}<ExternalLink size={15} /></a>)}
+            {res.badge && <div className="secure"><ShieldCheck size={16} /> {res.badge}</div>}
+            {res.note && <p className="note">{res.note}</p>}
+          </div>
+        </>}
+        <p className="note">Use only information you are authorized to access. Results may be approximate or incomplete.</p>
+      </div>
+    );
+  }
 
   let body: React.ReactNode = null;
 
@@ -371,10 +426,10 @@ export default function HomePage() {
       <div><ShieldCheck size={20} /><b>Safe</b><small>Public data only</small></div>
     </div>
     <div className="sec"><h3>Quick Tools</h3><button className="link" onClick={() => go("Tools")}>View All <ArrowRight size={13} style={{ verticalAlign: "middle" }} /></button></div>
-    <div className="g3">{visibleTools.slice(0, 6).map((t) => { const I = t.icon; return <button className="qt" key={t.key} onClick={() => openTool(t.key)}><span className="ic"><I size={20} /></span>{t.title}</button>; })}</div>
+    <div className="g3">{homeTools.map((t) => { const I = t.icon; return <button className="qt" key={t.key} onClick={() => openTool(t.key)}><span className="ic"><I size={20} /></span>{t.title}</button>; })}</div>
     <div className="banner"><div><b>Upgrade to Premium</b><p>Unlock all features!</p><button className="btn" onClick={() => { void loadPlans(); go("Premium"); }}>Go Premium →</button></div><Gem className="big" size={64} /></div>
     <div className="sec"><h3>Recent Activity</h3><button className="link" onClick={() => go("History")}>History</button></div>
-    {history.length ? <div className="list dk">{history.slice(0, 3).map((h, i) => { const I = tools.find((t) => t.key === h.key)?.icon || Search; return <div className="item" key={i}><span className="ic"><I size={18} /></span><span><b>{h.title}</b><small>{h.query} · {h.date}</small></span></div>; })}</div> : <div className="empty">Your recent lookups will appear here.</div>}
+    {history.length ? <div className="wpanel">{history.slice(0, 3).map((h, i) => { const I = histIcon(h.key); return <div className="item" key={i}><span className="ic"><I size={18} /></span><span><b>{h.title}</b><small>{h.query} · {h.date}</small></span></div>; })}</div> : <div className="empty">Your recent lookups will appear here.</div>}
   </>;
 
   if (page === "Tools") {
@@ -382,7 +437,7 @@ export default function HomePage() {
     body = <>
       {hdr("All Tools", "Home")}
       <label className="search"><Search size={18} /><input placeholder="Search tools..." value={toolSearch} onChange={(e) => setToolSearch(e.target.value)} /></label>
-      <div className="list">{list.map((t) => { const I = t.icon; return <button className="item" key={t.key} onClick={() => openTool(t.key)}><span className="ic"><I size={20} /></span><span><b>{t.title}</b><small>{t.sub}</small></span><ChevronRight size={18} /></button>; })}</div>
+      <div className="wpanel">{list.map((t) => { const I = t.icon; return <button className="item" key={t.key} onClick={() => openTool(t.key)}><span className="ic"><I size={20} /></span><span><b>{t.title}</b><small>{t.sub}</small></span><ChevronRight size={18} /></button>; })}</div>
       {!list.length && <div className="empty">No tools match your search.</div>}
       <p className="note">Only tools enabled by the administrator are shown. No private-person tracking, account intrusion or leaked-data searches.</p>
     </>;
@@ -393,7 +448,7 @@ export default function HomePage() {
     body = <>
       {hdr("History", "Home")}
       <div className="tabs">{([["all", "All"], ["tools", "Tools"], ["searches", "Searches"]] as const).map(([k, l]) => <button key={k} className={tab === k ? "on" : ""} onClick={() => setTab(k)}>{l}</button>)}</div>
-      {items.length ? <div className="list">{items.map((h, i) => { const I = tools.find((t) => t.key === h.key)?.icon || Search; return <div className="item" key={i}><span className="ic"><I size={20} /></span><span><b>{h.title}</b><small>{h.query}</small><small>{h.date}</small></span></div>; })}</div> : <div className="empty">No searches yet. Your activity will show here.</div>}
+      {items.length ? <div className="wpanel">{items.map((h, i) => { const I = histIcon(h.key); return <div className="item" key={i}><span className="ic"><I size={20} /></span><span><b>{h.title}</b><small>{h.query}</small><small>{h.date}</small></span><ChevronRight size={18} /></div>; })}</div> : <div className="empty">No searches yet. Your activity will show here.</div>}
       {history.length > 0 && <button className="btn danger gap" onClick={() => void clearHistory()}><Trash2 size={16} /> Clear History</button>}
       {!userEmail && <p className="note">Guest history lives only in this browser session. Login to sync it to your account.</p>}
       {error && <p className="err">{error}</p>}
