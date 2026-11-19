@@ -7,7 +7,7 @@ import {
   Compass, Crown, Database, Globe2, History, Home, KeyRound, LayoutGrid,
   Link2, LockKeyhole, LogIn, LogOut, Mail, Menu, Moon, Search, Settings,
   Shield, ShieldCheck, Smartphone, Sparkles, User, UserRoundSearch, Users,
-  Wifi, X, Zap, Image as ImageIcon, Share2, Network, Fingerprint, ExternalLink, Save, Edit3
+  Wifi, X, Zap, Image as ImageIcon, Share2, Network, Fingerprint, ExternalLink, Save, Edit3, Github, Chrome
 } from "lucide-react";
 
 type ToolKey = "ip" | "domain" | "username" | "email" | "url" | "dns" | "image" | "social" | "breach";
@@ -87,8 +87,8 @@ export default function HomePage() {
     });
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       if (!active) return;
-      if (!session) setUserEmail("");
-      else void hydrateUser(session.user);
+      if (!session) { setUserEmail(""); setProfileName(""); setProfileBio(""); setHistory([]); }
+      else { setUserEmail(session.user.email || ""); Promise.resolve().then(() => void hydrateUser(session.user)); }
     });
     return () => { active = false; subscription.unsubscribe(); };
   }, []);
@@ -241,8 +241,12 @@ export default function HomePage() {
       {authMode === "login" && <button className="text-link" style={{marginTop:10}} onClick={async()=>{if(!supabase||!email.trim()){setAuthMessage("Enter your email address first.");return;}const {error}=await supabase.auth.resetPasswordForEmail(email.trim(),{redirectTo:window.location.origin});setAuthMessage(error?error.message:"Password reset email sent if the account exists.");}}>Forgot password?</button>}
       <button className="primary-btn" style={{width:"100%",marginTop:20}} onClick={authenticate}>{authMode === "login" ? "Login" : "Create account"} <ArrowRight size={15} style={{verticalAlign:"middle",marginLeft:5}}/></button>
       {authMessage && <p className="error">{authMessage}</p>}
-      <div className="auth-switch">{authMode === "login" ? "Don't have an account?" : "Already registered?"} <button onClick={()=>{setAuthMode(authMode==="login"?"register":"login");setAuthMessage("");}}>{authMode==="login"?"Register":"Login"}</button></div>
-      <div className="notice">Your account is handled by Supabase Auth when configured. Never share your password or verification codes.</div>
+      <div className="auth-switch">{authMode === "login" ? "Don't have an account?" : "Already registered?"} <button onClick={()=>{setAuthMode(authMode==="login"?"register":"login");setAuthMessage("");setConfirmPassword("");}}>{authMode==="login"?"Register":"Login"}</button></div>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:9,marginTop:16}}>
+        <button className="secondary-btn" onClick={async()=>{if(!supabase){setAuthMessage("Supabase is not configured.");return;}const {error}=await supabase.auth.signInWithOAuth({provider:"google",options:{redirectTo:window.location.origin}});if(error)setAuthMessage(error.message);}}><Chrome size={15} style={{verticalAlign:"middle",marginRight:6}}/>Google</button>
+        <button className="secondary-btn" onClick={async()=>{if(!supabase){setAuthMessage("Supabase is not configured.");return;}const {error}=await supabase.auth.signInWithOAuth({provider:"github",options:{redirectTo:window.location.origin}});if(error)setAuthMessage(error.message);}}><Github size={15} style={{verticalAlign:"middle",marginRight:6}}/>GitHub</button>
+      </div>
+      <div className="notice">Google and GitHub buttons require their providers to be enabled in Supabase Auth. Never share your password or verification codes.</div>
       <button className="secondary-btn" style={{width:"100%",marginTop:14}} onClick={()=>setPage("Home")}>Back to home</button>
     </div></div>;
   }
