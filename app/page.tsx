@@ -397,7 +397,32 @@ export default function HomePage() {
         <label className="field-label">{dbTools.find(item=>item.slug===tool)?.input_label || (tool==="ip"?"Enter public IP address":tool==="domain"||tool==="dns"?"Enter domain name":tool==="email"||tool==="breach"?"Enter email address":tool==="username"||tool==="social"?"Enter public username":tool==="image"?"Enter public image URL":"Enter website URL")}</label>
         <div className="form-row"><input className="field" value={query} onChange={(e)=>setQuery(e.target.value)} placeholder={tool==="ip"?"8.8.8.8":tool==="domain"||tool==="dns"?"example.com":tool==="email"||tool==="breach"?"name@example.com":tool==="username"||tool==="social"?"public_username": "https://example.com/image.jpg"} onKeyDown={(e)=>{if(e.key==="Enter")runTool();}}/><button className="primary-btn" disabled={busy||!query.trim()} onClick={runTool}>{busy?"Checking…":tool==="ip"||tool==="dns"?"Lookup":tool==="domain"||tool==="url"?"Analyze":"Check"} <ArrowRight size={15} style={{verticalAlign:"middle"}}/></button></div>
         {error && <div className="error">{error}</div>}
-        {result !== null && <div className="result-box"><div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8,color:"#0872f9",fontWeight:800,marginBottom:10}}><span><CheckCircle2 size={17}/> API Result</span><button className="secondary-btn" onClick={()=>{const blob=new Blob([JSON.stringify(result,null,2)],{type:"application/json"});const url=URL.createObjectURL(blob);const link=document.createElement("a");link.href=url;link.download=(selectedTool.key||"tool")+"-response.json";link.click();URL.revokeObjectURL(url);}}>Download JSON</button></div>{Array.isArray((result as {publicLinks?:unknown[]}).publicLinks) || Array.isArray((result as {publicSearchLinks?:unknown[]}).publicSearchLinks) || Array.isArray((result as {links?:unknown[]}).links) ? <><strong>{(result as {username?:string}).username ? "Public links for @"+(result as {username:string}).username : (result as {service?:string}).service || "Search options"}</strong>{(((result as {publicLinks?:[string,string][]}).publicLinks || (result as {publicSearchLinks?:[string,string][]}).publicSearchLinks || (result as {links?:[string,string][]}).links || [])).map(([name,url])=><div key={name} style={{padding:"8px 0",borderBottom:"1px solid #dceaff"}}><a href={url} target="_blank" rel="noreferrer" style={{color:"#075fe0",fontWeight:700}}>{name} — Open <ExternalLink size={13} style={{verticalAlign:"middle"}}/></a></div>)}<p className="notice">{(result as {note?:string}).note}</p></> : <div style={{padding:12,borderRadius:12,background:"#f5f8ff",color:"#14294d",marginBottom:12,overflowWrap:"anywhere"}}><strong>Response</strong><pre style={{margin:"8px 0 0",fontFamily:"inherit",whiteSpace:"pre-wrap"}}>{typeof result==="object"&&result!==null?Object.entries(result as Record<string,unknown>).map(([k,v])=>k+": "+(typeof v==="string"?v:JSON.stringify(v))).join("\\n"):String(result)}</pre></div><details><summary style={{cursor:"pointer",fontWeight:800,color:"#075fe0"}}>View raw JSON</summary><pre style={{margin:"10px 0 0",fontFamily:"monospace",whiteSpace:"pre-wrap",overflowWrap:"anywhere"}}>{JSON.stringify(result,null,2)}</pre></details>}</div>}
+        {result !== null && (
+          <div className="result-box">
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8,color:"#0872f9",fontWeight:800,marginBottom:10}}>
+              <span><CheckCircle2 size={17}/> API Result</span>
+              <button className="secondary-btn" onClick={()=>{
+                const blob=new Blob([JSON.stringify(result,null,2)],{type:"application/json"});
+                const downloadUrl=URL.createObjectURL(blob);
+                const link=document.createElement("a");
+                link.href=downloadUrl;
+                link.download=(selectedTool.key||"tool")+"-response.json";
+                document.body.appendChild(link);
+                link.click();
+                link.remove();
+                URL.revokeObjectURL(downloadUrl);
+              }}>Download JSON</button>
+            </div>
+            <div style={{padding:12,borderRadius:12,background:"#f5f8ff",color:"#14294d",marginBottom:12,overflowWrap:"anywhere"}}>
+              <strong>Response</strong>
+              <pre style={{margin:"8px 0 0",fontFamily:"inherit",whiteSpace:"pre-wrap"}}>{typeof result==="string"?result:JSON.stringify(result,null,2)}</pre>
+            </div>
+            <details>
+              <summary style={{cursor:"pointer",fontWeight:800,color:"#075fe0"}}>View raw JSON</summary>
+              <pre style={{margin:"10px 0 0",fontFamily:"monospace",whiteSpace:"pre-wrap",overflowWrap:"anywhere"}}>{JSON.stringify(result,null,2)}</pre>
+            </details>
+          </div>
+        )}
         <p className="notice"><ShieldCheck size={13} style={{verticalAlign:"middle",marginRight:5}}/>Use only information you are authorized to access. Results may be approximate or incomplete; verify important details with primary sources.</p>
       </div>}
 
