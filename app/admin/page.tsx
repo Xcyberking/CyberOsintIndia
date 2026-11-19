@@ -7,7 +7,7 @@ import {
   ChevronRight, CircleHelp, Code2, Coins, CreditCard, Database, FileClock,
   FileText, Gauge, Globe2, LayoutDashboard, LockKeyhole, LogOut, Megaphone,
   Palette, Plus, RefreshCw, Search, Settings, Shield, ShieldCheck, SlidersHorizontal,
-  Sparkles, Ticket, Users, Wrench, X, Zap, Crown, Ban, Server, Link2
+  Sparkles, Ticket, Users, Wrench, X, Zap, Crown, Ban, Server, Link2, Github, Chrome
 } from "lucide-react";
 import "./admin.css";
 
@@ -74,18 +74,33 @@ export default function AdminPage() {
   const verify=useCallback(async()=>{
     if(!supabase){setChecking(false);return;}
     setChecking(true);
-    const {data:{user}}=await supabase.auth.getUser();
+    const {data:{user},error:authError}=await supabase.auth.getUser();
+    if(authError){setAuthUser(null);setIsAdmin(false);setMessage(authError.message);setChecking(false);return;}
     setAuthUser(user);
     if(user){
       const {data,error}=await supabase.from("profiles").select("role,status").eq("id",user.id).maybeSingle();
-      setIsAdmin(!error && data?.role==="admin" && data?.status==="active");
+      if(error){
+        setIsAdmin(false);
+        setMessage("Signed in, but admin role verification failed: "+error.message);
+      } else {
+        setIsAdmin(data?.role==="admin" && data?.status==="active");
+        if(data?.role!=="admin" || data?.status!=="active") setMessage("This account is signed in but is not an active administrator.");
+        else setMessage("");
+      }
     } else setIsAdmin(false);
     setChecking(false);
   },[]);
   useEffect(()=>{
     void verify();
     if(!supabase)return;
-    const {data:{subscription}}=supabase.auth.onAuthStateChange(()=>{void verify();});
+    const {data:{subscription}}=supabase.auth.onAuthStateChange((_event,session)=>{
+      if(!session){
+        setAuthUser(null);setIsAdmin(false);setChecking(false);
+        return;
+      }
+      // Defer Supabase API calls until after the auth event callback returns.
+      window.setTimeout(()=>{void verify();},0);
+    });
     return ()=>subscription.unsubscribe();
   },[verify]);
 
@@ -121,6 +136,19 @@ export default function AdminPage() {
     const {error}=await supabase.auth.signInWithPassword({email,password});
     if(error)setMessage(error.message);
     else await verify();
+  }
+  async function oauthLogin(provider:"google"|"github"){
+    if(!supabase){setMessage("Supabase is not configured.");return;}
+    setMessage("");
+    const redirectTo=window.location.origin+"/auth/callback?next=%2Fadmin";
+    const {error}=await supabase.auth.signInWithOAuth({
+      provider,
+      options:{
+        redirectTo,
+        scopes:provider==="github"?"read:user user:email":"openid email profile"
+      }
+    });
+    if(error)setMessage(error.message);
   }
   async function logout(){if(supabase)await supabase.auth.signOut();setAuthUser(null);setIsAdmin(false);setMessage("");}
 
@@ -178,7 +206,7 @@ export default function AdminPage() {
 
   if(checking)return <div className="admin-loading"><div className="admin-spinner"/>Checking admin access…</div>;
   if(!supabase)return <div className="admin-auth"><div className="admin-auth-card"><div className="admin-logo"><Shield size={30}/></div><h1>Cyber<span>X</span> OSINT</h1><p>Admin panel configuration required</p><div className="admin-warning">Add NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY in your hosting environment, then redeploy.</div><a href="https://github.com/Xcyberking/CyberOsintIndia" target="_blank" rel="noreferrer">Open project repository <ArrowRight size={15}/></a></div></div>;
-  if(!authUser||!isAdmin)return <div className="admin-auth"><div className="admin-auth-card"><div className="admin-logo"><Shield size={30}/></div><h1>Cyber<span>X</span> OSINT</h1><p>{authUser?"This account does not have active admin access.":"Secure administrator sign in"}</p>{!authUser&&<><label>Email address</label><input value={email} onChange={e=>setEmail(e.target.value)} type="email" placeholder="admin@example.com"/><label>Password</label><input value={password} onChange={e=>setPassword(e.target.value)} type="password" placeholder="Your password"/><button className="admin-primary" onClick={login}><LockKeyhole size={16}/> Admin Login</button></>}{message&&<div className="admin-message">{message}</div>}<div className="admin-auth-note">Admin access is controlled by the database role, not by a signup form or editable user metadata.</div></div></div>;
+  if(!authUser||!isAdmin)return <div className="admin-auth"><div className="admin-auth-card"><div className="admin-logo"><Shield size={30}/></div><h1>Cyber<span>X</span> OSINT</h1><p>{authUser?"This account does not have active admin access.":"Secure administrator sign in"}</p>{!authUser&&<><label>Email address</label><input value={email} onChange={e=>setEmail(e.target.value)} type="email" placeholder="admin@example.com"/><label>Password</label><input value={password} onChange={e=>setPassword(e.target.value)} type="password" placeholder="Your password"/><button className="admin-primary" onClick={login}><LockKeyhole size={16}/> Admin Login</button><div className="admin-oauth-divider"><span>OR CONTINUE WITH</span></div><div className="admin-oauth-grid"><button type="button" onClick={()=>void oauthLogin("google")}><Chrome size={16}/> Google</button><button type="button" onClick={()=>void oauthLogin("github")}><Github size={16}/> GitHub</button></div></>}{message&&<div className="admin-message">{message}</div>}{authUser&&!isAdmin&&<button className="admin-primary" onClick={()=>void logout()}><LogOut size={16}/> Sign out / switch account</button>}<div className="admin-auth-note">OAuth login is real Supabase Auth. Only an account whose database profile has role=admin and status=active can enter this panel.</div></div></div>;
 
   const navGroups=[
     {title:"OVERVIEW",keys:["dashboard","analytics","system"] as SectionKey[]},
