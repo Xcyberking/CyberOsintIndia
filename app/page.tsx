@@ -141,6 +141,17 @@ export default function HomePage() {
       setPage("Home");
     } else { setAuthMessage("Account created. Check your email to confirm your address."); }
   }
+  async function clearHistory() {
+    if (supabase) {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        const { error } = await supabase.from("search_history").delete().eq("user_id", user.id);
+        if (error) { setError("Could not clear saved history: " + error.message); return; }
+      }
+    }
+    setHistory([]);
+  }
+
   async function logout() {
     if (supabase) await supabase.auth.signOut();
     setUserEmail(""); setHistory([]); setPage("Home");
@@ -220,7 +231,7 @@ export default function HomePage() {
         <p className="notice"><ShieldCheck size={13} style={{verticalAlign:"middle",marginRight:5}}/>Use only information you are authorized to access. Results may be approximate or incomplete; verify important details with primary sources.</p>
       </div>}
 
-      {page === "History" && <div className="content-panel" style={{maxWidth:"none"}}><div className="section-head" style={{marginTop:0}}><h3>Search history</h3><button className="text-link" onClick={()=>setHistory([])}>Clear history</button></div>{history.length? <div className="tool-list">{history.map((item,i)=><div className="tool-row" key={i}><div className="tool-icon"><Clock3 size={18}/></div><span><strong>{item.title}</strong><small>{item.query} · {item.date}</small></span></div>)}</div>:<div className="empty">No searches yet. Your activity will show here.</div>}</div>}
+      {page === "History" && <div className="content-panel" style={{maxWidth:"none"}}><div className="section-head" style={{marginTop:0}}><h3>Search history</h3><button className="text-link" onClick={()=>void clearHistory()}>Clear history</button></div>{history.length? <div className="tool-list">{history.map((item,i)=><div className="tool-row" key={i}><div className="tool-icon"><Clock3 size={18}/></div><span><strong>{item.title}</strong><small>{item.query} · {item.date}</small></span></div>)}</div>:<div className="empty">No searches yet. Your activity will show here.</div>}</div>}
 
       {page === "Profile" && <><div className="profile-card"><div className="profile-avatar"><User size={26}/></div><div><strong>{userEmail?userEmail.split("@")[0]:"CyberKing"}</strong><div className="notice" style={{margin:0}}>{userEmail||"Guest workspace"}</div></div></div><div className="content-panel"><h3 style={{marginTop:0}}>Account</h3><p className="notice">Sign in to connect your workspace to your own Supabase Auth project.</p><button className="primary-btn" onClick={()=>{setAuthMode("login");setPage("Login");}}> <LogIn size={15} style={{verticalAlign:"middle",marginRight:6}}/>Sign in / Register</button>{userEmail&&<button className="secondary-btn" style={{marginLeft:8}} onClick={logout}><LogOut size={15} style={{verticalAlign:"middle",marginRight:6}}/>Logout</button>}</div></>}
 
