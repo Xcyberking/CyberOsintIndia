@@ -71,6 +71,12 @@ export default function AdminPage() {
   const [counts,setCounts]=useState<Record<string,number>>({});
   const [userEdits,setUserEdits]=useState<Record<string,{role:string;status:string;delta:string;reason:string}>>({});
   const [editingToolId,setEditingToolId]=useState<string>("");
+  const [gatewayKeyId,setGatewayKeyId]=useState("");
+  const [gatewayKeySecret,setGatewayKeySecret]=useState("");
+  const [gatewayEnabled,setGatewayEnabled]=useState(false);
+  const [gatewaySaving,setGatewaySaving]=useState(false);
+  const [gatewayMessage,setGatewayMessage]=useState("");
+  const [qrUploading,setQrUploading]=useState(false);
 
   const verify=useCallback(async()=>{
     if(!supabase){setChecking(false);return;}
@@ -220,6 +226,46 @@ export default function AdminPage() {
     setMessage(error?error.message:success);if(!error)await loadRows();
   }
 
+
+  useEffect(()=>{
+    if(!supabase||!isAdmin||!(section==="settings"||section==="payments"))return;
+    let active=true;
+    void supabase.functions.invoke("payment-gateway",{body:{action:"public_config"}}).then(({data,error})=>{
+      if(!active)return;
+      if(error){setGatewayMessage("Gateway status: "+error.message);return;}
+      setGatewayKeyId(String(data?.key_id||""));
+      setGatewayEnabled(Boolean(data?.enabled));
+    });
+    return ()=>{active=false;};
+  },[isAdmin,section]);
+
+  async function saveGateway(){
+    if(!supabase)return;
+    setGatewaySaving(true);setGatewayMessage("");
+    const {data,error}=await supabase.functions.invoke("payment-gateway",{body:{
+      action:"save_config",key_id:gatewayKeyId.trim(),key_secret:gatewayKeySecret.trim(),enabled:gatewayEnabled
+    }});
+    if(error||data?.error)setGatewayMessage(error?.message||data.error);
+    else {setGatewayKeySecret("");setGatewayMessage("Razorpay settings saved securely. Secret is encrypted and never returned to the browser.");}
+    setGatewaySaving(false);
+  }
+
+  async function uploadPaymentQr(file:File){
+    if(!supabase)return;
+    if(!["image/png","image/jpeg","image/webp"].includes(file.type)||file.size>2*1024*1024){setGatewayMessage("QR must be PNG, JPG or WebP and no larger than 2 MB.");return;}
+    setQrUploading(true);setGatewayMessage("");
+    const reader=new FileReader();
+    reader.onload=async()=>{
+      const value=String(reader.result||"");
+      if(!value.startsWith("data:image/")){setGatewayMessage("Could not read the QR image.");setQrUploading(false);return;}
+      const {error}=await supabase!.from("site_settings").upsert({key:"payment_qr_url",value,updated_by:authUser?.id,updated_at:new Date().toISOString()},{onConflict:"key"});
+      setGatewayMessage(error?error.message:"Payment QR uploaded and published to the Store.");
+      setQrUploading(false);
+    };
+    reader.onerror=()=>{setGatewayMessage("QR file could not be read.");setQrUploading(false);};
+    reader.readAsDataURL(file);
+  }
+
   const filtered=useMemo(()=>rows.filter(row=>JSON.stringify(row).toLowerCase().includes(search.toLowerCase())),[rows,search]);
   const recordCount=Object.values(counts).reduce((a,b)=>a+b,0);
   const addable=["tools","plans","announcements","api","developer","settings","appearance"].includes(section);
@@ -265,6 +311,19 @@ export default function AdminPage() {
       {section==="system"&&<div className="admin-panel"><h3><Server size={18}/> Runtime information</h3><div className="admin-info-grid"><div><small>Framework</small><b>Next.js 15</b></div><div><small>Runtime</small><b>Node.js</b></div><div><small>Database</small><b>Supabase PostgreSQL</b></div><div><small>Authentication</small><b>Supabase Auth</b></div><div><small>Admin authorization</small><b>Database role + RLS</b></div><div><small>Environment</small><b>{process.env.NODE_ENV}</b></div></div><p className="admin-hint">This panel reports configured integrations only; it does not invent CPU, storage or uptime metrics that the hosting provider has not supplied.</p></div>}
       {section==="backup"&&<div className="admin-panel"><h3><Database size={18}/> Backup & Restore</h3><div className="admin-warning">Database backups are controlled by your Supabase project and plan. This page does not claim to create a backup from the browser.</div><ol className="admin-steps"><li>Open your Supabase project dashboard.</li><li>Use Database backups / Point-in-Time Recovery if enabled on your plan.</li><li>Before restoring, verify the target project and the backup timestamp.</li><li>After restore, run the app build and verify Auth, RLS and table access.</li></ol><a className="admin-primary-link" href="https://supabase.com/dashboard/projects" target="_blank" rel="noreferrer">Open Supabase dashboard <ArrowRight size={15}/></a></div>}
       {section==="about"&&<div className="admin-panel"><div className="admin-about-logo"><Shield size={42}/></div><h2>CyberX OSINT</h2><p>Public-source research workspace with an Android-first interface and database-protected administration.</p><div className="admin-warning">Safety scope: public technical metadata and public links only. No private-person tracking, account intrusion, password discovery, leaked personal-data search, or precise location claims.</div><a href="https://github.com/Xcyberking/CyberOsintIndia" target="_blank" rel="noreferrer">Repository <ArrowRight size={15}/></a></div>}
+      {section==="settings"&&<section className="admin-panel" style={{marginBottom:18}}>
+        <div className="admin-panel-head"><div><h3><CreditCard size={18}/> Payment Gateway & QR</h3><small>Razorpay credentials are stored encrypted in a private database table.</small></div><span className="admin-tag">{gatewayEnabled?"Gateway enabled":"Gateway disabled"}</span></div>
+        <div className="admin-form-grid">
+          <input value={gatewayKeyId} onChange={e=>setGatewayKeyId(e.target.value)} placeholder="Razorpay Key ID (rzp_test_… / rzp_live_…)"/>
+          <input value={gatewayKeySecret} onChange={e=>setGatewayKeySecret(e.target.value)} type="password" autoComplete="new-password" placeholder="Razorpay Key Secret (leave blank to keep saved secret)"/>
+        </div>
+        <div className="admin-form-foot">
+          <label><input type="checkbox" checked={gatewayEnabled} onChange={e=>setGatewayEnabled(e.target.checked)}/> Enable online payments</label>
+          <button className="admin-primary" disabled={gatewaySaving||!gatewayKeyId.trim()} onClick={()=>void saveGateway()}>{gatewaySaving?"Saving…":"Save Gateway Settings"}</button>
+        </div>
+        <div style={{marginTop:14}}><label className="admin-form-label">Upload manual payment QR (PNG/JPG/WebP, max 2 MB)</label><input type="file" accept="image/png,image/jpeg,image/webp" onChange={e=>{const file=e.target.files?.[0];if(file)void uploadPaymentQr(file);}}/><small className="admin-hint">QR is public and appears in the User Store. Gateway Secret is not shown again after saving.</small></div>
+        {gatewayMessage&&<div className="admin-message" style={{marginTop:12}}>{gatewayMessage}</div>}
+      </section>}
       {active.table&&<section className="admin-panel admin-data-panel"><div className="admin-panel-head"><div><h3>{active.label}</h3><small>{rows.length} records loaded · maximum 100 shown</small></div><div className="admin-data-actions"><div className="admin-search"><Search size={16}/><input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search records…"/></div><button onClick={()=>void loadRows()}><RefreshCw size={16}/></button></div></div>
         {addable&&<div className="admin-add-form"><h4><Plus size={16}/> {editingToolId?"Edit tool":"Add "+(section==="tools"?"tool":section==="plans"?"plan":section==="announcements"?"announcement":section==="api"?"integration":section==="developer"?"resource":"setting")}</h4><div className="admin-form-grid"><input placeholder={section==="settings"||section==="appearance"?"Setting key":"Name / title"} value={form.name||""} onChange={e=>setForm(v=>({...v,name:e.target.value}))}/>{section==="tools"&&<><input placeholder="Tool icon (e.g. Globe, Search, MapPin)" value={form.icon||"Wrench"} onChange={e=>setForm(v=>({...v,icon:e.target.value}))}/><input placeholder="API URL (use {} for query)" value={form.url||""} onChange={e=>setForm(v=>({...v,url:e.target.value}))}/><input placeholder="Category" value={form.category||""} onChange={e=>setForm(v=>({...v,category:e.target.value}))}/><input placeholder="Input label" value={form.input_label||"Enter query"} onChange={e=>setForm(v=>({...v,input_label:e.target.value}))}/><input type="number" min="0" placeholder="Credits per use" value={form.credit_cost||"1"} onChange={e=>setForm(v=>({...v,credit_cost:e.target.value}))}/></>}{section==="plans"&&<input placeholder="Price (INR)" value={form.price||""} onChange={e=>setForm(v=>({...v,price:e.target.value}))}/>}{section==="plans"&&<><input placeholder="Credits" value={form.credits||""} onChange={e=>setForm(v=>({...v,credits:e.target.value}))}/><input placeholder="Duration days" value={form.duration||"30"} onChange={e=>setForm(v=>({...v,duration:e.target.value}))}/></>}{(section==="api"||section==="developer")&&<input placeholder="Public URL" value={form.url||""} onChange={e=>setForm(v=>({...v,url:e.target.value}))}/>}{section==="developer"&&<input placeholder="Resource type" value={form.type||"documentation"} onChange={e=>setForm(v=>({...v,type:e.target.value}))}/>}{section==="settings"||section==="appearance"?<textarea placeholder='JSON value, e.g. {"theme":"blue"}' value={form.value||""} onChange={e=>setForm(v=>({...v,value:e.target.value}))}/>:<textarea placeholder="Description / body" value={form.description||""} onChange={e=>setForm(v=>({...v,description:e.target.value}))}/>}</div><div className="admin-form-foot"><label><input type="checkbox" checked={form.enabled==="true"} onChange={e=>setForm(v=>({...v,enabled:e.target.checked?"true":"false"}))}/>{section==="announcements"?"Publish now":section==="api"?"Enable integration":section==="tools"?"Enable tool":"Enabled"}</label><button className="admin-primary" disabled={saving||!form.name?.trim()} onClick={saveRecord}>{saving?"Saving…":editingToolId?"Update tool":"Save"}</button>{editingToolId&&<button className="admin-small" onClick={()=>{setEditingToolId("");setForm({});}}>Cancel edit</button>}</div></div>}
         {renderRows()}
