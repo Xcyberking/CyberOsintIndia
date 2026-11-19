@@ -157,7 +157,7 @@ export default function HomePage() {
         const custom=dbTools.find(t=>t.slug===tool); const handler=custom?.handler||"custom";
         const configuredApi=String(custom?.config?.api_url||"").trim();
         if(configuredApi){
-          if(!configuredApi.startsWith("https://")||(configuredApi.match(/\\{\\}/g)||[]).length!==1)throw new Error("This tool has an invalid API URL configuration.");
+          if(!configuredApi.startsWith("https://")||(configuredApi.match(/\{\}/g)||[]).length!==1)throw new Error("This tool has an invalid API URL configuration.");
           const target=configuredApi.replace("{}",encodeURIComponent(query.trim()));
           const response=await fetch(target,{method:"GET",headers:{Accept:"application/json"}});
           const raw=await response.text();let parsed:unknown;try{parsed=JSON.parse(raw);}catch{parsed={response:raw};}
