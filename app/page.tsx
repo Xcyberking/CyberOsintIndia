@@ -179,12 +179,6 @@ export default function HomePage() {
   const goTool = (key: ToolKey) => { setTool(key); setPage("Tool"); setQuery(""); setResult(null); setError(""); };
   const addHistory = async (title: string, value: string) => {
     setHistory((old) => [{ title, query: value, date: new Date().toLocaleString() }, ...old].slice(0, 30));
-    if (supabase) {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (user) await supabase.from("search_history").insert({
-        user_id: user.id, tool_slug: tool, input_summary: value.slice(0, 500), status: "success"
-      });
-    }
   };
 
   async function runTool() {
@@ -194,16 +188,15 @@ export default function HomePage() {
       const configuredTool=dbTools.find(item=>item.slug===tool);
       const configuredApi=String(configuredTool?.config?.api_url||"").trim();
       let data: unknown;
-      // Admin-configured API tools take priority over the built-in tool registry.
+      let creditsHandledByProxy=false;
+      // Run administrator-defined APIs on the server so browser CORS does not block results.
       if(configuredTool && configuredApi){
-        if(!configuredApi.startsWith("https://")||(configuredApi.match(/\{\}/g)||[]).length!==1)throw new Error("This tool has an invalid API URL. Admin must use HTTPS and exactly one {} placeholder.");
-        const target=configuredApi.replace("{}",encodeURIComponent(query.trim()));
-        const response=await fetch(target,{method:"GET",headers:{Accept:"application/json"}});
-        const raw=await response.text();
-        let parsed:unknown;
-        try{parsed=JSON.parse(raw);}catch{parsed={response:raw};}
-        if(!response.ok)throw new Error("Configured API returned HTTP "+response.status+". "+(typeof parsed==="object"&&parsed!==null&&"error" in parsed?String((parsed as {error:unknown}).error):"Request failed"));
-        data=parsed;
+        if(!supabase)throw new Error("Authentication service is unavailable.");
+        const {data:proxyResult,error:proxyError}=await supabase.functions.invoke("run-custom-tool",{body:{slug:tool,query:query.trim()}});
+        if(proxyError||proxyResult?.error)throw new Error(proxyError?.message||proxyResult.error);
+        data=proxyResult.result;
+        creditsHandledByProxy=true;
+        if(typeof proxyResult.remaining_credits==="number")setCredits(proxyResult.remaining_credits);
       } else if (tool === "ip") {
         const response = await fetch("/api/ip?address=" + encodeURIComponent(query.trim()));
         data = await response.json();
@@ -294,7 +287,7 @@ export default function HomePage() {
           note: "These are direct public profile links. No accounts are scraped and no match is claimed."
         };
       }
-      if(supabase){const {data:{user}}=await supabase.auth.getUser();if(user){const slug=toolSlug[tool]||tool;const {data:remaining,error:creditError}=await supabase.rpc("consume_tool_credit",{p_tool_slug:slug,p_query:query.trim()});if(creditError)throw new Error(creditError.message);if(typeof remaining==="number")setCredits(remaining);}}
+      if(supabase&&!creditsHandledByProxy){const {data:{user}}=await supabase.auth.getUser();if(user){const slug=toolSlug[tool]||tool;const {data:remaining,error:creditError}=await supabase.rpc("consume_tool_credit",{p_tool_slug:slug,p_query:query.trim()});if(creditError)throw new Error(creditError.message);if(typeof remaining==="number")setCredits(remaining);}}
       setResult(data); await addHistory(selectedTool.title, query.trim());
     } catch (e) {
       setError(e instanceof Error ? e.message : "Something went wrong.");
