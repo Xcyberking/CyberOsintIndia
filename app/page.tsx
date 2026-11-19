@@ -55,7 +55,7 @@ export default function HomePage() {
   const visibleTools = tools.filter(item => enabledToolSlugs.includes(toolSlug[item.key]));
   const selectedTool = useMemo(() => tools.find((item) => item.key === tool)!, [tool]);
 
-  async function hydrateUser(user: { id: string; email?: string | null }) {
+  async function hydrateUser(user: { id: string; email?: string | null; user_metadata?: Record<string, unknown> }) {
     if (!supabase) return;
     const { data: profile } = await supabase.from("profiles").select("status,display_name,bio").eq("id", user.id).maybeSingle();
     if (profile?.status && profile.status !== "active") {
@@ -65,7 +65,7 @@ export default function HomePage() {
       return;
     }
     setUserEmail(user.email || "");
-    setProfileName(profile?.display_name || user.user_metadata?.name || user.email?.split("@")[0] || "");
+    setProfileName(profile?.display_name || (typeof user.user_metadata?.name === "string" ? user.user_metadata.name : user.email?.split("@")[0]) || "");
     setProfileBio(profile?.bio || "");
     const { data } = await supabase.from("search_history").select("tool_slug,input_summary,created_at")
       .eq("user_id", user.id).order("created_at", { ascending: false }).limit(30);
