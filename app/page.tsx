@@ -40,6 +40,7 @@ export default function HomePage() {
   const [authMode, setAuthMode] = useState<"login" | "register">("login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [displayName, setDisplayName] = useState("");
   const [userEmail, setUserEmail] = useState("");
   const [profileName, setProfileName] = useState("");
@@ -168,6 +169,8 @@ export default function HomePage() {
 
   async function authenticate() {
     setAuthMessage("");
+    if (authMode === "register" && password.length < 8) { setAuthMessage("Use a password with at least 8 characters."); return; }
+    if (authMode === "register" && password !== confirmPassword) { setAuthMessage("Passwords do not match."); return; }
     if (!supabase) { setAuthMessage("Supabase is not configured. Check the public Supabase URL and publishable key in hosting settings."); return; }
     const response = authMode === "login"
       ? await supabase.auth.signInWithPassword({ email, password })
@@ -179,7 +182,17 @@ export default function HomePage() {
       setPage("Home");
     } else { setAuthMessage("Account created. Check your email to confirm your address."); }
   }
-  async function saveProfile() {\n    if (!supabase) return;\n    setProfileSaving(true); setProfileMessage("");\n    const { data: { user } } = await supabase.auth.getUser();\n    if (!user) { setProfileMessage("Please sign in again."); setProfileSaving(false); return; }\n    const { error } = await supabase.from("profiles").update({ display_name: profileName.trim(), bio: profileBio.trim(), updated_at: new Date().toISOString() }).eq("id", user.id);\n    setProfileMessage(error ? error.message : "Profile updated successfully.");\n    setProfileSaving(false);\n  }\n\n  async function clearHistory() {
+  async function saveProfile() {
+    if (!supabase) return;
+    setProfileSaving(true); setProfileMessage("");
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) { setProfileMessage("Please sign in again."); setProfileSaving(false); return; }
+    const { error } = await supabase.from("profiles").update({
+      display_name: profileName.trim(), bio: profileBio.trim(), updated_at: new Date().toISOString()
+    }).eq("id", user.id);
+    setProfileMessage(error ? error.message : "Profile updated successfully.");
+    setProfileSaving(false);
+  }\n\n  async function clearHistory() {
     if (supabase) {
       const { data: { user } } = await supabase.auth.getUser();
       if (user) {
@@ -211,6 +224,8 @@ export default function HomePage() {
       {authMode === "register" && <><label className="field-label">Display name</label><input className="field" placeholder="Your name" value={displayName} onChange={(e)=>setDisplayName(e.target.value)}/></>}
       <label className="field-label">Email address</label><input className="field" type="email" placeholder="you@example.com" value={email} onChange={(e)=>setEmail(e.target.value)}/>
       <label className="field-label">Password</label><input className="field" type="password" placeholder="Enter password" value={password} onChange={(e)=>setPassword(e.target.value)}/>
+      {authMode === "register" && <><label className="field-label">Confirm password</label><input className="field" type="password" placeholder="Confirm password" value={confirmPassword} onChange={e=>setConfirmPassword(e.target.value)}/></>}
+      {authMode === "login" && <button className="text-link" style={{marginTop:10}} onClick={async()=>{if(!supabase||!email.trim()){setAuthMessage("Enter your email address first.");return;}const {error}=await supabase.auth.resetPasswordForEmail(email.trim(),{redirectTo:window.location.origin});setAuthMessage(error?error.message:"Password reset email sent if the account exists.");}}>Forgot password?</button>}
       <button className="primary-btn" style={{width:"100%",marginTop:20}} onClick={authenticate}>{authMode === "login" ? "Login" : "Create account"} <ArrowRight size={15} style={{verticalAlign:"middle",marginLeft:5}}/></button>
       {authMessage && <p className="error">{authMessage}</p>}
       <div className="auth-switch">{authMode === "login" ? "Don't have an account?" : "Already registered?"} <button onClick={()=>{setAuthMode(authMode==="login"?"register":"login");setAuthMessage("");}}>{authMode==="login"?"Register":"Login"}</button></div>
