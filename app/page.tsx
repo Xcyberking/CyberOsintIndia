@@ -30,7 +30,7 @@ const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY || process.
 const supabase = supabaseUrl && supabaseKey ? createClient(supabaseUrl, supabaseKey) : null;
 
 export default function HomePage() {
-  const [page, setPage] = useState("Home");
+  const [page, setPage] = useState("Splash");
   const [tool, setTool] = useState<ToolKey>("ip");
   const [query, setQuery] = useState("");
   const [result, setResult] = useState<unknown>(null);
@@ -80,11 +80,11 @@ export default function HomePage() {
     }
     setUserEmail(user.email || "");
     setProfileName(profile?.display_name || (typeof user.user_metadata?.name === "string" ? user.user_metadata.name : user.email?.split("@")[0]) || "");
-    setProfileBio(profile?.bio || ""); setUsername(profile?.username||""); setAvatarUrl(profile?.avatar_url||""); setCredits(profile?.credits||0); setRole(profile?.role||"user"); setPlanName(profile?.plan_name||"Free"); setPlanExpires(profile?.plan_expires_at||""); setReferralCode(profile?.referral_code||"");
+    setProfileBio(profile?.bio || ""); setUsername(profile?.username||""); if(profile?.avatar_url){const {data:av}=await supabase.storage.from("cyberx-avatars").createSignedUrl(profile.avatar_url,3600);setAvatarUrl(av?.signedUrl||"");}else setAvatarUrl(""); setCredits(profile?.credits||0); setRole(profile?.role||"user"); setPlanName(profile?.plan_name||"Free"); setPlanExpires(profile?.plan_expires_at||""); setReferralCode(profile?.referral_code||"");
     const { data } = await supabase.from("search_history").select("tool_slug,input_summary,created_at")
       .eq("user_id", user.id).order("created_at", { ascending: false }).limit(30);
     if (data) setHistory(data.map((item) => ({
-      title: tools.find((entry) => entry.key === item.tool_slug)?.title || item.tool_slug,
+      title: tools.find((entry) => entry.key === item.tool_slug || toolSlug[entry.key]===item.tool_slug)?.title || dbTools.find(entry=>entry.slug===item.tool_slug)?.name || item.tool_slug,
       query: item.input_summary,
       date: new Date(item.created_at).toLocaleString()
     })));
@@ -111,7 +111,9 @@ export default function HomePage() {
       setPaymentInstructions(String(settings.payment_instructions||"").replace(/^"|"$/g,""));
     });
     void supabase.auth.getSession().then(({ data }) => {
-      if (active && data.session?.user) void hydrateUser(data.session.user);
+      if(!active)return;
+      if(data.session?.user){void hydrateUser(data.session.user);setPage("Home");}
+      else setPage("Login");
     });
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       if (!active) return;
@@ -259,10 +261,10 @@ export default function HomePage() {
     if(!supabase)return; const {data:{user}}=await supabase.auth.getUser(); if(!user)return;
     if(!["image/jpeg","image/png","image/webp"].includes(file.type)||file.size>5*1024*1024){setProfileMessage("Choose a JPG, PNG or WebP image under 5 MB.");return;}
     const path=user.id+"/avatar-"+Date.now()+"."+file.name.split(".").pop();
-    const {error}=await supabase.storage.from("cyberx-user-media").upload(path,file,{upsert:true,contentType:file.type});
+    const {error}=await supabase.storage.from("cyberx-avatars").upload(path,file,{upsert:true,contentType:file.type});
     if(error){setProfileMessage(error.message);return;}
-    const {data}=await supabase.storage.from("cyberx-user-media").createSignedUrl(path,31536000);
-    if(data?.signedUrl){const {error:e}=await supabase.from("profiles").update({avatar_url:data.signedUrl,updated_at:new Date().toISOString()}).eq("id",user.id);setProfileMessage(e?e.message:"Profile photo updated.");if(!e)setAvatarUrl(data.signedUrl);}
+    const {data}=await supabase.storage.from("cyberx-avatars").createSignedUrl(path,3600);
+    if(data?.signedUrl){const {error:e}=await supabase.from("profiles").update({avatar_url:path,updated_at:new Date().toISOString()}).eq("id",user.id);setProfileMessage(e?e.message:"Profile photo updated.");if(!e)setAvatarUrl(data.signedUrl);}
   }
   async function submitPayment(){
     if(!supabase||!selectedPlan){setStoreMessage("Choose a plan first.");return;}
@@ -337,9 +339,10 @@ export default function HomePage() {
           <div className="eyebrow">CYBERX INTELLIGENCE / {page.toUpperCase()}</div>
           <h1 className="page-title">{page === "Tool" ? selectedTool.title : page === "Home" ? "Dashboard" : page}</h1>
         </div>
-        <div className="top-actions"><button className="icon-btn" aria-label="Notifications" title="Notifications" onClick={()=>void openNotifications()}><Bell size={17}/></button>{userEmail ? <><button className="secondary-btn" onClick={()=>navTo("Profile")}><Edit3 size={14} style={{verticalAlign:"middle",marginRight:5}}/>Profile Edit</button><div className="avatar">{userEmail[0].toUpperCase()}</div></> : <><button className="secondary-btn" onClick={()=>{setAuthMode("login");setPage("Login");}}>Login</button><button className="primary-btn" onClick={()=>{setAuthMode("register");setPage("Register");}}>Register</button></>}</div>
+        <div className="top-actions"><button className="icon-btn" aria-label="Notifications" title="Notifications" onClick={()=>void openNotifications()}><Bell size={17}/></button>{userEmail ? <>{role==="admin"&&<button className="secondary-btn" onClick={()=>{window.location.href="/admin";}}>Admin Panel</button>}<button className="secondary-btn" onClick={()=>navTo("Profile")}><Edit3 size={14} style={{verticalAlign:"middle",marginRight:5}}/>Profile Edit</button><div className="avatar">{userEmail[0].toUpperCase()}</div></> : <><button className="secondary-btn" onClick={()=>{setAuthMode("login");setPage("Login");}}>Login</button><button className="primary-btn" onClick={()=>{setAuthMode("register");setPage("Register");}}>Register</button></>}</div>
       </header>
 
+      {page === "Splash" && <div className="auth-wrap"><div className="auth-card" style={{textAlign:"center"}}><div className="auth-logo"><div className="brand-mark"><Shield size={34}/></div></div><h1>Cyber<span style={{color:"#0872f9"}}>X</span> OSINT</h1><p>Explore · Analyze · Investigate</p><div className="auth-spinner" aria-label="Loading"/></div></div>}
       {page === "Home" && <>
         <section className="welcome"><div><div className="eyebrow" style={{color:"#a8d9ff"}}>YOUR PUBLIC-SOURCE RESEARCH HUB</div><h2>Welcome back, {userEmail ? userEmail.split("@")[0] : "CyberKing"} 👋</h2><p>Explore public technical information with a clean, privacy-conscious workspace. Keep your research organized and transparent.</p></div><div className="welcome-tag"><Activity size={13} style={{verticalAlign:"middle",marginRight:6}}/> SYSTEM READY</div></section>
         <section className="stats">
