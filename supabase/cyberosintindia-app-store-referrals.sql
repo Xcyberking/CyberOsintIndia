@@ -125,3 +125,13 @@ begin if new.referral_code is null then new.referral_code:=upper(substr(replace(
 drop trigger if exists ensure_profile_referral_code on public.profiles;
 create trigger ensure_profile_referral_code before insert on public.profiles for each row execute function public.ensure_profile_referral_code();
 update public.profiles set referral_code=upper(substr(replace(id::text,'-',''),1,10)) where referral_code is null;
+
+-- Enable the nine supported public-source tools and keep phone-person lookup disabled.
+update public.tools set handler=case slug
+ when 'username-tracker' then 'username' when 'email-validator' then 'email'
+ when 'ip-lookup' then 'ip' when 'domain-lookup' then 'domain'
+ when 'url-safety' then 'url' when 'dns-lookup' then 'dns'
+ when 'reverse-image-search' then 'image' when 'social-media-analyzer' then 'social'
+ when 'breach-self-check' then 'breach' else handler end,
+ enabled=(slug in ('username-tracker','email-validator','ip-lookup','domain-lookup','url-safety','dns-lookup','reverse-image-search','social-media-analyzer','breach-self-check'))
+ where slug in ('username-tracker','email-validator','ip-lookup','domain-lookup','url-safety','dns-lookup','reverse-image-search','social-media-analyzer','breach-self-check','number-info','phone-validator','image-metadata');
