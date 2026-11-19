@@ -156,11 +156,27 @@ export default function HomePage() {
         const custom=dbTools.find(t=>t.slug===tool); const handler=custom?.handler||"custom";
         const endpoints:Record<string,string>={ip:"/api/ip?address=",domain:"/api/domain?domain=",dns:"/api/dns?domain="};
         if(endpoints[handler]){const response=await fetch(endpoints[handler]+encodeURIComponent(query.trim()));data=await response.json();if(!response.ok)throw new Error((data as {error?:string}).error||"Lookup failed.");}
-        else if(handler==="email"){if(!/^[^\\s@]+@[^\\s@]+\\.[^\\s@]{2,}$/.test(query.trim()))throw new Error("Enter a valid email.");data={email:query.trim(),note:"Syntax validation only; mailbox ownership is not verified."};}
-        else if(handler==="url"){const parsed=new URL(query.match(/^https?:\\/\\//)?query:"https://"+query);data={url:parsed.href,protocol:parsed.protocol,hostname:parsed.hostname};}
-        else if(handler==="username"||handler==="social"){const handle=query.trim().replace(/^@/,"");if(!/^[a-zA-Z0-9._-]{2,30}$/.test(handle))throw new Error("Enter a public username.");data={username:handle,note:"Public links only; no scraping or identity claims."};}
+        else if(handler==="email"){
+          const parts=query.trim().split("@");
+          if(parts.length!==2||!parts[0]||!parts[1].includes("."))throw new Error("Enter a valid email address.");
+          data={email:query.trim(),note:"Syntax validation only; mailbox ownership is not verified."};
+        }
+        else if(handler==="url"){
+          const parsed=new URL(query.trim().startsWith("http")?query.trim():"https://"+query.trim());
+          if(parsed.protocol!=="http:"&&parsed.protocol!=="https:")throw new Error("Only HTTP and HTTPS are supported.");
+          data={url:parsed.href,protocol:parsed.protocol,hostname:parsed.hostname};
+        }
+        else if(handler==="username"||handler==="social"){
+          const handle=query.trim().startsWith("@")?query.trim().slice(1):query.trim();
+          if(handle.length<2||handle.length>30||!/^[a-zA-Z0-9._-]+$/.test(handle))throw new Error("Enter a public username.");
+          data={username:handle,note:"Public links only; no scraping or identity claims."};
+        }
         else if(handler==="breach")data={service:"Have I Been Pwned",link:"https://haveibeenpwned.com/",note:"Use the official service to check your own email."};
-        else if(handler==="image"){const u=new URL(query.trim());data={imageUrl:u.href,search:"https://lens.google.com/uploadbyurl?url="+encodeURIComponent(u.href)};}
+        else if(handler==="image"){
+          const u=new URL(query.trim());
+          if(u.protocol!=="https:"&&u.protocol!=="http:")throw new Error("Enter a public image URL.");
+          data={imageUrl:u.href,search:"https://lens.google.com/uploadbyurl?url="+encodeURIComponent(u.href)};
+        }
         else throw new Error("This custom tool needs a supported backend handler configured by the administrator.");
       } else if (tool === "image") {
         const imageUrl = new URL(query.trim());
