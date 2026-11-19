@@ -141,11 +141,18 @@ export default function HomePage() {
       } else if (tool === "email") {
         const valid = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(query.trim());
         const domain = query.trim().split("@")[1] || "";
-        data = { email: query.trim(), syntax: valid ? "Valid format" : "Invalid format", domain: domain || "Not available", note: "This check does not identify the owner or verify mailbox access." };
         if (!valid) throw new Error("Enter an email address in a valid format.");
+        const response = await fetch("/api/dns?domain=" + encodeURIComponent(domain));
+        const dnsData = await response.json();
+        if (!response.ok) throw new Error((dnsData as {error?:string}).error || "Mail domain lookup failed.");
+        const mx = (dnsData as {records?:{type:string;records:{value:string}[]}[]}).records?.find(record => record.type === "MX")?.records || [];
+        data = { email: query.trim(), syntax: "Valid format", domain, mailDomainRecords: mx, note: "MX records indicate mail routing only; they do not identify the owner or verify mailbox access." };
       } else if (tool === "url") {
         const parsed = new URL(query.match(/^https?:\/\//) ? query : "https://" + query);
-        data = { url: parsed.href, protocol: parsed.protocol.replace(":", "").toUpperCase(), hostname: parsed.hostname, port: parsed.port || "Default", secureTransport: parsed.protocol === "https:" ? "HTTPS enabled" : "HTTP only", note: "This is a structural check, not a malware or reputation verdict." };
+        if (!["http:", "https:"].includes(parsed.protocol)) throw new Error("Only HTTP and HTTPS website URLs are supported.");
+        const dnsResponse = await fetch("/api/dns?domain=" + encodeURIComponent(parsed.hostname));
+        const dnsData = await dnsResponse.json();
+        data = { url: parsed.href, protocol: parsed.protocol.replace(":", "").toUpperCase(), hostname: parsed.hostname, port: parsed.port || "Default", secureTransport: parsed.protocol === "https:" ? "HTTPS enabled" : "HTTP only", dns: dnsResponse.ok ? dnsData : (dnsData as {error?:string}).error, note: "This checks URL structure and public DNS only; it is not a malware or reputation verdict." };
       } else {
         const handle = query.trim().replace(/^@/, "");
         if (!/^[a-zA-Z0-9._-]{2,30}$/.test(handle)) throw new Error("Enter a public username (2–30 letters, numbers, dots, underscores or hyphens).");
