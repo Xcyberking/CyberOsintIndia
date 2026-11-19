@@ -139,8 +139,20 @@ export default function HomePage() {
     if(!userEmail){setError("Please login or register before using research tools.");setAuthMode("login");setPage("Login");return;}
     setBusy(true); setError(""); setResult(null);
     try {
+      const configuredTool=dbTools.find(item=>item.slug===tool);
+      const configuredApi=String(configuredTool?.config?.api_url||"").trim();
       let data: unknown;
-      if (tool === "ip") {
+      // Admin-configured API tools take priority over the built-in tool registry.
+      if(configuredTool && configuredApi){
+        if(!configuredApi.startsWith("https://")||(configuredApi.match(/\{\}/g)||[]).length!==1)throw new Error("This tool has an invalid API URL. Admin must use HTTPS and exactly one {} placeholder.");
+        const target=configuredApi.replace("{}",encodeURIComponent(query.trim()));
+        const response=await fetch(target,{method:"GET",headers:{Accept:"application/json"}});
+        const raw=await response.text();
+        let parsed:unknown;
+        try{parsed=JSON.parse(raw);}catch{parsed={response:raw};}
+        if(!response.ok)throw new Error("Configured API returned HTTP "+response.status+". "+(typeof parsed==="object"&&parsed!==null&&"error" in parsed?String((parsed as {error:unknown}).error):"Request failed"));
+        data=parsed;
+      } else if (tool === "ip") {
         const response = await fetch("/api/ip?address=" + encodeURIComponent(query.trim()));
         data = await response.json();
         if (!response.ok) throw new Error((data as { error?: string }).error || "Lookup failed.");
@@ -154,41 +166,29 @@ export default function HomePage() {
         data = await response.json();
         if (!response.ok) throw new Error((data as {error?:string}).error || "DNS lookup failed.");
       } else if (!tools.some(t=>t.key===tool)) {
-        const custom=dbTools.find(t=>t.slug===tool); const handler=custom?.handler||"custom";
-        const configuredApi=String(custom?.config?.api_url||"").trim();
-        if(configuredApi){
-          if(!configuredApi.startsWith("https://")||(configuredApi.match(/\{\}/g)||[]).length!==1)throw new Error("This tool has an invalid API URL configuration.");
-          const target=configuredApi.replace("{}",encodeURIComponent(query.trim()));
-          const response=await fetch(target,{method:"GET",headers:{Accept:"application/json"}});
-          const raw=await response.text();let parsed:unknown;try{parsed=JSON.parse(raw);}catch{parsed={response:raw};}
-          if(!response.ok)throw new Error("API returned HTTP "+response.status+": "+(typeof parsed==="object"&&parsed!==null&&"error" in parsed?String((parsed as {error:unknown}).error):"Request failed"));
-          data=parsed;
-        }
-        else 
-        const endpoints:Record<string,string>={ip:"/api/ip?address=",domain:"/api/domain?domain=",dns:"/api/dns?domain="};
-        if(endpoints[handler]){const response=await fetch(endpoints[handler]+encodeURIComponent(query.trim()));data=await response.json();if(!response.ok)throw new Error((data as {error?:string}).error||"Lookup failed.");}
-        else if(handler==="email"){
+        const custom=dbTools.find(t=>t.slug===tool);
+        const handler=custom?.handler||"custom";
+        if(handler==="email"){
           const parts=query.trim().split("@");
           if(parts.length!==2||!parts[0]||!parts[1].includes("."))throw new Error("Enter a valid email address.");
           data={email:query.trim(),note:"Syntax validation only; mailbox ownership is not verified."};
-        }
-        else if(handler==="url"){
+        } else if(handler==="url"){
           const parsed=new URL(query.trim().startsWith("http")?query.trim():"https://"+query.trim());
-          if(parsed.protocol!=="http:"&&parsed.protocol!=="https:")throw new Error("Only HTTP and HTTPS are supported.");
+          if(parsed.protocol!=="https:"&&parsed.protocol!=="http:")throw new Error("Only HTTP and HTTPS are supported.");
           data={url:parsed.href,protocol:parsed.protocol,hostname:parsed.hostname};
-        }
-        else if(handler==="username"||handler==="social"){
-          const handle=query.trim().startsWith("@")?query.trim().slice(1):query.trim();
+        } else if(handler==="username"||handler==="social"){
+          const handle=query.trim().replace(/^@/,"");
           if(handle.length<2||handle.length>30||!/^[a-zA-Z0-9._-]+$/.test(handle))throw new Error("Enter a public username.");
           data={username:handle,note:"Public links only; no scraping or identity claims."};
+        } else if(handler==="breach"){
+          data={service:"Have I Been Pwned",link:"https://haveibeenpwned.com/",note:"Use the official service to check your own email."};
+        } else if(handler==="image"){
+          const imageUrl=new URL(query.trim());
+          if(imageUrl.protocol!=="https:"&&imageUrl.protocol!=="http:")throw new Error("Enter a public image URL.");
+          data={imageUrl:imageUrl.href,search:"https://lens.google.com/uploadbyurl?url="+encodeURIComponent(imageUrl.href)};
+        } else {
+          throw new Error("This tool has no API URL. Ask the administrator to edit the tool and add its HTTPS API URL with one {} query placeholder.");
         }
-        else if(handler==="breach")data={service:"Have I Been Pwned",link:"https://haveibeenpwned.com/",note:"Use the official service to check your own email."};
-        else if(handler==="image"){
-          const u=new URL(query.trim());
-          if(u.protocol!=="https:"&&u.protocol!=="http:")throw new Error("Enter a public image URL.");
-          data={imageUrl:u.href,search:"https://lens.google.com/uploadbyurl?url="+encodeURIComponent(u.href)};
-        }
-        else throw new Error("This custom tool needs an API URL or supported handler configured by the administrator.");
       } else if (tool === "image") {
         const imageUrl = new URL(query.trim());
         if (!["http:", "https:"].includes(imageUrl.protocol)) throw new Error("Enter a public HTTP or HTTPS image URL.");
