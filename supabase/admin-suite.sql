@@ -231,3 +231,20 @@ grant execute on function public.admin_update_user(uuid,text,text,integer,text) 
 -- First admin: replace the email with the owner's verified Supabase Auth email and run once.
 -- update public.profiles p set role='admin'
 -- from auth.users u where p.id=u.id and u.email='YOUR_VERIFIED_ADMIN_EMAIL';
+
+-- Seed the currently implemented safe public-source tools and editable plan examples.
+insert into public.tool_registry (name, description, category, is_enabled, sort_order)
+values
+  ('IP Lookup','View approximate public IP and network metadata.','Network',true,10),
+  ('Domain Analyzer','Review public domain registration and nameserver records.','Web intelligence',true,20),
+  ('Username Search','Open direct links to public profile pages for a handle.','Public profiles',true,30),
+  ('Email Validator','Validate email address syntax and domain format only.','Validation',true,40),
+  ('URL Inspector','Inspect URL structure and protocol information.','Web intelligence',true,50)
+on conflict (name) do nothing;
+
+insert into public.premium_plans (name, description, price_inr, credits, duration_days, is_active)
+values
+  ('Basic','Starter access plan; configure billing before accepting payments.',29,10,30,true),
+  ('Pro','Extended usage plan; configure billing before accepting payments.',49,25,30,true),
+  ('Ultra','Higher usage plan; configure billing before accepting payments.',99,50,30,true)
+on conflict (name) do nothing;
