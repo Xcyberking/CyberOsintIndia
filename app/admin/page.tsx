@@ -78,13 +78,25 @@ export default function AdminPage() {
     if(authError){setAuthUser(null);setIsAdmin(false);setMessage(authError.message);setChecking(false);return;}
     setAuthUser(user);
     if(user){
-      const {data,error}=await supabase.from("profiles").select("role,status").eq("id",user.id).maybeSingle();
-      if(error){
+      // First verify by immutable Auth user ID. If an older profile was created
+      // before Auth identity linking, allow an exact verified-email match only
+      // when that database profile is already explicitly admin + active.
+      let profileQuery=await supabase.from("profiles").select("id,email,role,status").eq("id",user.id).maybeSingle();
+      if(!profileQuery.data && !profileQuery.error && user.email && user.email_confirmed_at){
+        profileQuery=await supabase.from("profiles").select("id,email,role,status").ilike("email",user.email).maybeSingle();
+      }
+      const profile=profileQuery.data;
+      if(profileQuery.error){
         setIsAdmin(false);
-        setMessage("Signed in, but admin role verification failed: "+error.message);
+        setMessage("Admin verification could not read your profile: "+profileQuery.error.message);
       } else {
-        setIsAdmin(data?.role==="admin" && data?.status==="active");
-        if(data?.role!=="admin" || data?.status!=="active") setMessage("This account is signed in but is not an active administrator.");
+        const verifiedEmailMatch=Boolean(user.email_confirmed_at && user.email &&
+          profile?.email?.toLowerCase()===user.email.toLowerCase());
+        const sameAuthUser=profile?.id===user.id;
+        const allowed=(sameAuthUser || verifiedEmailMatch) &&
+          profile?.role==="admin" && profile?.status==="active";
+        setIsAdmin(allowed);
+        if(!allowed) setMessage("Signed in as "+(user.email||"an account")+", but this Auth identity is not linked to an active admin profile. Sign in with the email/password account or link its OAuth identity in Supabase.");
         else setMessage("");
       }
     } else setIsAdmin(false);
