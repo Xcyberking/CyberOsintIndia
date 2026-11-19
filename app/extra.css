@@ -1,0 +1,12 @@
+.phone .welcome{background:linear-gradient(120deg,#0a1b42,#0d2a5e);border:1px solid var(--line);border-radius:18px;padding:14px;margin-bottom:12px}
+.wpanel{background:#fff;border-radius:16px;padding:4px 12px;box-shadow:0 10px 30px #0004}.wpanel .item{border:0;border-bottom:1px solid var(--wl);border-radius:0;background:none;padding:13px 2px}.wpanel .item:last-child{border:0}
+.dk .wpanel .item,.wpanel .item{color:var(--wt)}.wpanel .item small{color:var(--wm)}
+.rh{margin:22px 0 10px;font:700 18px 'Space Grotesk';color:var(--text)}.rh+.res{margin-top:0}
+.res h4{margin:2px 0 6px;font:700 15px 'Space Grotesk'}.rhead{display:flex;gap:12px;align-items:center;border:1px solid var(--wl);border-radius:12px;padding:12px;margin-bottom:14px;font-size:13.5px;line-height:1.6;font-weight:600}.rhead .av{width:54px;height:54px;border-radius:50%;background:linear-gradient(145deg,#27c8ff,#0757e9);display:grid;place-items:center;color:#fff;font:800 22px 'Space Grotesk';flex:none}
+.prev{width:100%;max-height:220px;object-fit:cover;border-radius:12px;margin-bottom:12px;border:1px solid var(--wl)}
+.secure{display:inline-flex;align-items:center;gap:7px;margin-top:12px;background:#e3f8ec;color:#0b8a4e;border:1px solid #9fe0bd;border-radius:999px;padding:7px 16px;font-weight:800;font-size:13px}
+.upload{border:1.5px dashed #2a6fd0;border-radius:16px;background:#0a1d45;padding:22px 14px 14px;text-align:center;margin-bottom:14px;color:var(--text)}.upload svg{color:#4aa3ff}.upload b{display:block;margin:8px 0 2px;font-size:15px}.upload small{display:block;color:var(--muted);margin-bottom:12px}.upload .wf{margin:0;text-align:left}
+.pg{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;background:#fff;border-radius:16px;padding:12px;margin-bottom:14px}.pg button{border:2px solid transparent;border-radius:14px;background:#f4f8ff;padding:14px 4px;display:grid;justify-items:center;gap:6px;font-size:11.5px;font-weight:700;color:var(--wt)}.pg button.on{border-color:#0b6bff;background:#e8f1ff}
+.splash .big{filter:drop-shadow(0 0 30px #0b6bff88)}.splash .ult{font:600 20px 'Space Grotesk';margin-top:26px;line-height:1.35}.splash .ldg{font-size:15px;margin-top:12px}
+.hero .ring{width:128px;height:128px;background:radial-gradient(circle,#1c7dff44,#0b6bff08 72%);border:1px solid #1f64c4}
+.authlink{display:block;margin:12px auto 0}
