@@ -28,7 +28,7 @@ Admin access is enforced using Supabase Auth, a database role check and Row Leve
 1. Use Node.js 22 or newer.
 2. Copy `.env.example` to `.env.local`.
 3. Set `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`. The CyberOsintIndia project values are prefilled in `.env.example`.
-4. The connected CyberOsintIndia database has already received the additive admin integration migration. For this existing project, do not rerun the old bootstrap SQL over the live database.
+4. The connected CyberOsintIndia database has already received the additive integration migrations. The applied SQL is documented in [`supabase/cyberosintindia-integration.sql`](supabase/cyberosintindia-integration.sql). Do not rerun it against the already-migrated live project; it is included for review and reproducible setup.
 5. Create your owner account through Supabase Auth / the app.
 6. In the SQL Editor, replace the email below with your verified owner email and run:
 
