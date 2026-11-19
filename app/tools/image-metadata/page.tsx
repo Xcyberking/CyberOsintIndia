@@ -1,1 +1,0 @@
-import ImageMetadata from "./ImageMetadata";export default function ImageMetadataPage(){return <ImageMetadata/>;}
