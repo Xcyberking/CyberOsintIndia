@@ -117,7 +117,7 @@ export default function HomePage() {
         data = await response.json();
         if (!response.ok) throw new Error((data as { error?: string }).error || "Lookup failed.");
       } else if (tool === "dns") {
-        const host = query.trim().toLowerCase().replace(/^https?:\\/\\//, "").split("/")[0];
+        const host = query.trim().toLowerCase().replace("https://", "").replace("http://", "").split("/")[0];
         const response = await fetch("/api/dns?domain=" + encodeURIComponent(host));
         data = await response.json();
         if (!response.ok) throw new Error((data as {error?:string}).error || "DNS lookup failed.");
