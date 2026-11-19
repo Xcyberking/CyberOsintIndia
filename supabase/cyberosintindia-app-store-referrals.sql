@@ -136,3 +136,45 @@ update public.tools set handler=case slug
  when 'breach-self-check' then 'breach' else handler end,
  enabled=(slug in ('username-tracker','email-validator','ip-lookup','domain-lookup','url-safety','dns-lookup','reverse-image-search','social-media-analyzer','breach-self-check'))
  where slug in ('username-tracker','email-validator','ip-lookup','domain-lookup','url-safety','dns-lookup','reverse-image-search','social-media-analyzer','breach-self-check','number-info','phone-validator','image-metadata');
+
+-- Rewards are granted once only after email confirmation (or immediately for verified OAuth).
+create table if not exists public.signup_reward_claims(user_id uuid primary key references auth.users(id) on delete cascade,created_at timestamptz not null default now());
+alter table public.signup_reward_claims enable row level security;
+revoke all on public.signup_reward_claims from public,anon,authenticated;
+create unique index if not exists referral_claims_referred_unique on public.referral_claims(referred_id);
+create or replace function public.handle_profile_referral()
+returns trigger language plpgsql security definer set search_path='' as $$
+declare referrer uuid; reward_count integer:=0; welcome_count integer:=0; code text; claimed uuid;
+begin
+ if new.email_confirmed_at is null then return new; end if;
+ insert into public.signup_reward_claims(user_id) values(new.id) on conflict do nothing returning user_id into claimed;
+ if claimed is null then return new; end if;
+ select coalesce((value->>'credits')::integer,0) into welcome_count from public.site_settings where key='default_signup_credits';
+ welcome_count:=coalesce(welcome_count,0);
+ if welcome_count>0 then
+  update public.profiles set credits=credits+welcome_count where id=new.id;
+  insert into public.credit_transactions(user_id,amount,delta,reason) values(new.id,welcome_count,welcome_count,'Welcome credits');
+ end if;
+ code:=nullif(new.raw_user_meta_data->>'referral_code','');
+ if code is not null then
+  select id into referrer from public.profiles where referral_code=code and id<>new.id and status='active' limit 1;
+  if referrer is not null then
+   select coalesce((value->>'credits')::integer,0) into reward_count from public.site_settings where key='referral_reward';
+   reward_count:=coalesce(reward_count,0);
+   insert into public.referral_claims(referrer_id,referred_id,reward,status) values(referrer,new.id,reward_count,'qualified')
+   on conflict(referred_id) do nothing returning referred_id into claimed;
+   if claimed is not null and reward_count>0 then
+    update public.profiles set credits=credits+reward_count where id=referrer;
+    insert into public.credit_transactions(user_id,amount,delta,reason) values(referrer,reward_count,reward_count,'Referral reward');
+   end if;
+  end if;
+ end if;
+ return new;
+end $$;
+drop trigger if exists cyberx_profile_referral_rewards on auth.users;
+drop trigger if exists zz_cyberx_profile_referral_rewards on auth.users;
+drop trigger if exists zz_cyberx_profile_referral_rewards_confirm on auth.users;
+create trigger zz_cyberx_profile_referral_rewards after insert on auth.users for each row execute function public.handle_profile_referral();
+create trigger zz_cyberx_profile_referral_rewards_confirm after update of email_confirmed_at on auth.users
+for each row when(old.email_confirmed_at is null and new.email_confirmed_at is not null)
+execute function public.handle_profile_referral();
