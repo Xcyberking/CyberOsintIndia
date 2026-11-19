@@ -178,3 +178,9 @@ create trigger zz_cyberx_profile_referral_rewards after insert on auth.users for
 create trigger zz_cyberx_profile_referral_rewards_confirm after update of email_confirmed_at on auth.users
 for each row when(old.email_confirmed_at is null and new.email_confirmed_at is not null)
 execute function public.handle_profile_referral();
+
+-- Allow users to read only the public Store/referral configuration values.
+drop policy if exists "public payment settings read" on public.site_settings;
+create policy "public payment settings read" on public.site_settings for select to anon,authenticated
+using(key in ('payment_qr_url','payment_instructions','referral_reward','default_signup_credits'));
+grant select on public.site_settings to anon,authenticated;
