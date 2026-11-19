@@ -400,7 +400,7 @@ export default function HomePage() {
         {result !== null && (
           <div className="result-box">
             <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8,color:"#0872f9",fontWeight:800,marginBottom:10}}>
-              <span><CheckCircle2 size={17}/> API Result</span>
+              <span><CheckCircle2 size={17}/> API Response</span>
               <button className="secondary-btn" onClick={()=>{
                 const blob=new Blob([JSON.stringify(result,null,2)],{type:"application/json"});
                 const downloadUrl=URL.createObjectURL(blob);
