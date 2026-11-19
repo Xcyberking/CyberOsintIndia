@@ -1,6 +1,0 @@
-{
-  "regions": ["bom1"],
-  "crons": [
-    { "path": "/api/cron/health", "schedule": "0 6 * * *" }
-  ]
-}
