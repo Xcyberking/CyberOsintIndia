@@ -225,3 +225,11 @@ values
  ('Pro','Extended plan example. Configure a verified payment provider before taking payments.',49,25,30,true),
  ('Ultra','Higher usage plan example. Configure a verified payment provider before taking payments.',99,50,30,true)
 on conflict(name) do nothing;
+
+
+-- Signed-in users can clear only their own saved search history.
+alter table public.search_history enable row level security;
+drop policy if exists "history own delete" on public.search_history;
+create policy "history own delete" on public.search_history
+  for delete to authenticated using ((select auth.uid()) = user_id);
+grant delete on public.search_history to authenticated;
