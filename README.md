@@ -69,3 +69,19 @@ Import the repository into Vercel or another Node.js host. Build command: `npm r
 
 ## Privacy and safety
 This project is scoped to lawful research using public, non-sensitive technical information. It does not provide private-person tracking, account intrusion, password discovery, leaked personal-data dumps, or phone-number identity lookup. IP lookups are approximate network metadata and must not be treated as a person's precise location.
+
+
+## Google and GitHub OAuth setup
+
+The application now uses a shared PKCE callback at `/auth/callback` for both the public sign-in page and the admin sign-in page. The admin callback checks the signed-in user's `profiles.role` and `profiles.status` in PostgreSQL; an OAuth identity alone never grants administrator access.
+
+Configure these providers in Supabase Dashboard → Authentication → Sign In / Providers:
+
+- Google: enable Google and enter the Google OAuth Web Client ID and Client Secret.
+- GitHub: enable GitHub and enter the GitHub OAuth App Client ID and Client Secret.
+
+For each provider's OAuth application, use the Supabase provider callback URL shown in the Supabase provider settings as its authorized redirect/callback URL. In Supabase Dashboard → Authentication → URL Configuration, add the deployed app origin as the Site URL and allow `https://YOUR-DEPLOYED-DOMAIN/auth/callback` (plus the local callback URL only while developing).
+
+Google OAuth Web Client: add the deployed app origin to Authorized JavaScript origins; add the Supabase provider callback URL to Authorized redirect URIs. GitHub OAuth App: set the app homepage to the deployed app origin and Authorization callback URL to the Supabase provider callback URL.
+
+The admin account must already have `role='admin'` and `status='active'` in `public.profiles`. Do not promote users based on email text, provider name, or user-editable metadata. Keep OAuth client secrets only in the Supabase provider settings, never in `NEXT_PUBLIC_*` variables or browser code.
