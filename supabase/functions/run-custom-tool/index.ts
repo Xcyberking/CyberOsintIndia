@@ -56,10 +56,11 @@ Deno.serve(async (req: Request) => {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 15000);
     let response: Response;
+    let raw = "";
     try {
       response = await fetch(target, { method: "GET", headers: { Accept: "application/json, text/plain;q=0.9, */*;q=0.1" }, redirect: "error", signal: controller.signal });
+      raw = await response.text();
     } finally { clearTimeout(timeout); }
-    const raw = await response.text();
     if (raw.length > 1_000_000) return reply({ error: "API response is larger than the 1 MB limit." }, 502);
     let payload: unknown;
     try { payload = JSON.parse(raw); } catch { payload = { response: raw }; }
