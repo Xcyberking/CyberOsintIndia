@@ -41,7 +41,7 @@ const tableByKey: Partial<Record<SectionKey,string>> = {
   announcements:"announcements",api:"api_integrations",logs:"admin_audit_logs",developer:"developer_resources",support:"support_tickets"
 };
 const envUrl=process.env.NEXT_PUBLIC_SUPABASE_URL;
-const envKey=process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+const envKey=process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 const supabase=envUrl&&envKey?createClient(envUrl,envKey):null;
 
 function valueText(value: unknown): string {
