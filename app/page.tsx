@@ -135,6 +135,7 @@ export default function HomePage() {
   };
 
   async function runTool() {
+    if(!userEmail){setError("Please login or register before using research tools.");setAuthMode("login");setPage("Login");return;}
     setBusy(true); setError(""); setResult(null);
     try {
       let data: unknown;
