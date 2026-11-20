@@ -138,3 +138,9 @@ using (key = any(array[
   'referral_new_user_credits',
   'referral_reward'
 ]));
+
+-- These are trigger-only routines. The legacy callable referral RPC is retired;
+-- signup/referral credits are now issued by the verified-email trigger only.
+revoke all on function public.claim_referral_reward() from public, anon, authenticated;
+revoke all on function public.handle_profile_referral() from public, anon, authenticated;
+revoke all on function public.handle_new_user() from public, anon, authenticated;
