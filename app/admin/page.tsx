@@ -7,15 +7,16 @@ import {
   ChevronRight, CircleHelp, Code2, Coins, CreditCard, Database, FileClock,
   FileText, Gauge, Globe2, LayoutDashboard, LockKeyhole, LogOut, Megaphone,
   Palette, Plus, RefreshCw, Search, Settings, Shield, ShieldCheck, SlidersHorizontal,
-  Sparkles, Ticket, Users, Wrench, X, Zap, Crown, Ban, Server, Link2, Github, Chrome
+  Sparkles, Ticket, Users, Wrench, X, Zap, Crown, Ban, Server, Link2, Github, Chrome, UserCircle, Save
 } from "lucide-react";
 import "./admin.css";
 
 type Row = Record<string, unknown>;
-type SectionKey = "dashboard"|"users"|"banned"|"tools"|"plans"|"payments"|"credits"|"referrals"|"settings"|"appearance"|"announcements"|"api"|"backup"|"logs"|"developer"|"support"|"analytics"|"system"|"about";
+type SectionKey = "dashboard"|"profile"|"users"|"banned"|"tools"|"plans"|"payments"|"credits"|"referrals"|"settings|"appearance"|"announcements"|"api"|"backup"|"logs"|"developer"|"support"|"analytics"|"system"|"about";
 type Section = { key: SectionKey; label: string; table?: string; description: string; icon: typeof Shield; };
 const sections: Section[] = [
   {key:"dashboard",label:"Dashboard",description:"Overview of your OSINT workspace",icon:LayoutDashboard},
+  {key:"profile",label:"My Profile",description:"View and edit your administrator profile",icon:UserCircle},
   {key:"users",label:"User Management",table:"profiles",description:"Review accounts, roles, status and credit balances",icon:Users},
   {key:"banned",label:"Banned Users",table:"profiles",description:"Review suspended and banned accounts",icon:Ban},
   {key:"tools",label:"Tools Management",table:"tools",description:"Enable, disable and organize public-source tools",icon:Wrench},
@@ -83,6 +84,10 @@ export default function AdminPage() {
   const [bulkCreditBusy,setBulkCreditBusy]=useState(false);
   const [planEdits,setPlanEdits]=useState<Record<string,string>>({});
   const [adminPlans,setAdminPlans]=useState<{id:string;name:string;credits:number;duration_days:number}[]>([]);
+  const [referralRewardForm,setReferralRewardForm]=useState({signup:"3",referred:"7",referrer:"3"});
+  const [referralSettingsSaving,setReferralSettingsSaving]=useState(false);
+  const [adminProfileDraft,setAdminProfileDraft]=useState({display_name:"",username:"",bio:""});
+  const [adminProfileSaving,setAdminProfileSaving]=useState(false);
 
   const verify=useCallback(async()=>{
     if(!supabase){setChecking(false);return;}
@@ -158,6 +163,28 @@ export default function AdminPage() {
     if(!supabase||!isAdmin)return;
     void supabase.from("premium_plans").select("id,name,credits,duration_days").order("name").then(({data})=>setAdminPlans((data||[]) as typeof adminPlans));
   },[isAdmin]);
+  useEffect(()=>{
+    if(!supabase||!isAdmin)return;
+    let active=true;
+    void supabase.from("site_settings").select("key,value").in("key",["default_signup_credits","referral_new_user_credits","referral_reward"]).then(({data,error})=>{
+      if(!active)return;
+      if(error){setMessage("Could not load referral rewards: "+error.message);return;}
+      const map=Object.fromEntries((data||[]).map(row=>[row.key,row.value])) as Record<string,unknown>;
+      const read=(key:string,fallback:number)=>{const raw=map[key] as {credits?:unknown}|undefined;const n=Number(raw?.credits??fallback);return Number.isSafeInteger(n)&&n>=0?n:fallback;};
+      setReferralRewardForm({signup:String(read("default_signup_credits",3)),referred:String(read("referral_new_user_credits",7)),referrer:String(read("referral_reward",3))});
+    });
+    return ()=>{active=false;};
+  },[isAdmin]);
+  useEffect(()=>{
+    if(!supabase||!isAdmin||!authUser)return;
+    let active=true;
+    void supabase.from("profiles").select("display_name,username,bio").eq("id",authUser.id).maybeSingle().then(({data,error})=>{
+      if(!active)return;
+      if(error){setMessage("Could not load admin profile: "+error.message);return;}
+      setAdminProfileDraft({display_name:String(data?.display_name||""),username:String(data?.username||""),bio:String(data?.bio||"")});
+    });
+    return ()=>{active=false;};
+  },[isAdmin,authUser?.id]);
 
   async function login(){
     if(!supabase){setMessage("Supabase is not configured. Add the two NEXT_PUBLIC Supabase variables.");return;}
@@ -180,16 +207,56 @@ export default function AdminPage() {
     if(error)setMessage(error.message);
   }
   async function logout(){if(supabase)await supabase.auth.signOut();setAuthUser(null);setIsAdmin(false);setMessage("");}
+  async function saveAdminProfile(){
+    if(!supabase||!authUser)return;
+    const display_name=adminProfileDraft.display_name.trim();
+    const username=adminProfileDraft.username.trim();
+    if(!display_name){setMessage("Enter your display name.");return;}
+    if(username&&!/^[a-zA-Z0-9_]{3,24}$/.test(username)){setMessage("Username must be 3–24 letters, numbers or underscores.");return;}
+    setAdminProfileSaving(true);
+    const {error}=await supabase.from("profiles").update({display_name,username:username||null,bio:adminProfileDraft.bio.trim(),updated_at:new Date().toISOString()}).eq("id",authUser.id);
+    setMessage(error?error.message:"Administrator profile updated.");
+    setAdminProfileSaving(false);
+  }
+  async function saveReferralSettings(){
+    if(!supabase||!authUser)return;
+    const signup=Number(referralRewardForm.signup),referred=Number(referralRewardForm.referred),referrer=Number(referralRewardForm.referrer);
+    if(![signup,referred,referrer].every(n=>Number.isSafeInteger(n)&&n>=0&&n<=2147483647)){setMessage("Referral rewards must be whole numbers from 0 to 2,147,483,647.");return;}
+    setReferralSettingsSaving(true);
+    const updated_at=new Date().toISOString();
+    const values=[
+      {key:"default_signup_credits",value:{credits:signup},updated_by:authUser.id,updated_at},
+      {key:"referral_new_user_credits",value:{credits:referred},updated_by:authUser.id,updated_at},
+      {key:"referral_reward",value:{credits:referrer},updated_by:authUser.id,updated_at}
+    ];
+    const {error}=await supabase.from("site_settings").upsert(values,{onConflict:"key"});
+    setMessage(error?error.message:"Signup and referral rewards saved.");
+    setReferralSettingsSaving(false);
+  }
 
   async function saveRecord(){
     if(!supabase||!active.table)return;
     setSaving(true);setMessage("");
     let payload:Row={};
     if(section==="tools") {
+      const current=editingToolId?rows.find(row=>String(row.id)===editingToolId):undefined;
       const apiUrl=(form.url||"").trim();
-      if(!/^https:\/\//i.test(apiUrl) || (apiUrl.match(/\{\}/g)||[]).length!==1){setMessage("Tool API URL must use HTTPS and contain exactly one {} query placeholder.");setSaving(false);return;}
-      try{const parsed=new URL(apiUrl.replace("{}", "sample"));if(!["https:"].includes(parsed.protocol))throw new Error();}catch{setMessage("Enter a valid HTTPS API URL.");setSaving(false);return;}
-      payload={slug:(form.name||"").toLowerCase().trim().replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,""),name:form.name||"",description:form.description||"",category:form.category||"Research",handler:"custom",input_label:form.input_label||"Enter query",credit_cost:Math.max(0,Number(form.credit_cost||0)),enabled:form.enabled==="true",config:{api_url:apiUrl,icon:form.icon||"Wrench"}};
+      const creditCost=Number(form.credit_cost??0);
+      if(!Number.isSafeInteger(creditCost)||creditCost<0||creditCost>2147483647){setMessage("Query cost must be a whole number from 0 to 2,147,483,647.");setSaving(false);return;}
+      let handler=String(form.handler||current?.handler||"custom");
+      const currentConfig=(current?.config&&typeof current.config==="object"?current.config:{}) as Record<string,unknown>;
+      const config:Record<string,unknown>={...currentConfig,icon:form.icon||"Wrench"};
+      if(apiUrl){
+        if(!/^https:\/\//i.test(apiUrl) || (apiUrl.match(/\{\}/g)||[]).length!==1){setMessage("Tool API URL must use HTTPS and contain exactly one {} query placeholder.");setSaving(false);return;}
+        try{const parsed=new URL(apiUrl.replace("{}", "sample"));if(parsed.protocol!=="https:")throw new Error();}catch{setMessage("Enter a valid HTTPS API URL.");setSaving(false);return;}
+        handler="custom";
+        config.api_url=apiUrl;
+      } else if(!current || handler==="custom"){
+        setMessage("A custom tool requires an HTTPS API URL with exactly one {} query placeholder.");setSaving(false);return;
+      } else {
+        delete config.api_url;
+      }
+      payload={slug:String(current?.slug||(form.name||"").toLowerCase().trim().replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,"")),name:form.name||"",description:form.description||"",category:form.category||"Research",handler,input_label:form.input_label||"Enter query",credit_cost:creditCost,enabled:form.enabled==="true",config};
     }
     else if(section==="plans") payload={name:form.name||"",description:form.description||"",price_inr:Number(form.price||0),credits:Number(form.credits||0),duration_days:Number(form.duration||30),is_active:true};
     else if(section==="announcements") payload={title:form.name||"",body:form.description||"",active:form.enabled==="true",is_published:form.enabled==="true",created_by:authUser?.id};
@@ -250,7 +317,7 @@ export default function AdminPage() {
     const {error}=await supabase.from("announcements").update({is_published:published,active:published}).eq("id",id);
     setMessage(error?error.message:"Announcement updated.");if(!error)await loadRows();
   }
-  async function editTool(row:Row){setEditingToolId(String(row.id));const config=(row.config&&typeof row.config==="object"?row.config:{}) as Record<string,string>;setForm({name:valueText(row.name),description:valueText(row.description),category:valueText(row.category),url:config.api_url||"",icon:config.icon||"Wrench",credit_cost:valueText(row.credit_cost),input_label:valueText(row.input_label),enabled:String(Boolean(row.enabled))});setMessage("Editing "+valueText(row.name));}
+  async function editTool(row:Row){setEditingToolId(String(row.id));const config=(row.config&&typeof row.config==="object"?row.config:{}) as Record<string,string>;setForm({name:valueText(row.name),description:valueText(row.description),category:valueText(row.category),url:config.api_url||"",icon:config.icon||"Wrench",handler:valueText(row.handler),credit_cost:valueText(row.credit_cost),input_label:valueText(row.input_label),enabled:String(Boolean(row.enabled))});setMessage("Editing "+valueText(row.name));}
   async function deleteTool(id:string){if(!supabase||!window.confirm("Delete this tool permanently?"))return;const {error}=await supabase.from("tools").delete().eq("id",id);setMessage(error?error.message:"Tool deleted.");if(!error){if(editingToolId===id){setEditingToolId("");setForm({});}await loadRows();await loadCounts();}}
   async function toggleTool(id:string,enabled:boolean){
     if(!supabase)return;
@@ -313,6 +380,7 @@ export default function AdminPage() {
 
   const navGroups=[
     {title:"OVERVIEW",keys:["dashboard","analytics","system"] as SectionKey[]},
+    {title:"ACCOUNT",keys:["profile"] as SectionKey[]},
     {title:"MANAGEMENT",keys:["users","banned","tools","plans","payments","credits","referrals"] as SectionKey[]},
     {title:"CONFIGURATION",keys:["settings","appearance","announcements","api","backup"] as SectionKey[]},
     {title:"OPERATIONS",keys:["logs","developer","support","about"] as SectionKey[]}
@@ -340,10 +408,12 @@ export default function AdminPage() {
       <div className="admin-sidebar-foot"><div className="admin-avatar">CX</div><div><b>{authUser.email}</b><small>Super Administrator</small></div><button title="Logout" onClick={logout}><LogOut size={17}/></button></div>
     </aside>
     <main className="admin-main">
-      <header className="admin-topbar"><div><div className="admin-kicker">CYBERX OSINT / CONTROL CENTER</div><h1>{active.label}</h1></div><div className="admin-top-actions"><span className="admin-online"><i/> Admin access verified</span><a className="admin-small" href="/" style={{textDecoration:"none"}}>Open User App</a><button title="Refresh" onClick={()=>{void loadRows();void loadCounts();}}><RefreshCw size={17}/></button><button title="Notifications"><Bell size={17}/></button><div className="admin-top-avatar">CX</div></div></header>
+      <header className="admin-topbar"><div><div className="admin-kicker">CYBERX OSINT / CONTROL CENTER</div><h1>{active.label}</h1></div><div className="admin-top-actions"><span className="admin-online"><i/> Admin access verified</span><a className="admin-small" href="/" style={{textDecoration:"none"}}>Open User App</a><button title="Refresh" onClick={()=>{void loadRows();void loadCounts();}}><RefreshCw size={17}/></button><button title="Notifications"><Bell size={17}/></button><button className="admin-top-avatar" title="My admin profile" onClick={()=>setSection("profile")}>{(adminProfileDraft.display_name||authUser.email||"CX").slice(0,2).toUpperCase()}</button></div></header>
       <div className="admin-subtitle">{active.description}</div>
       {message&&<div className="admin-message"><CheckCircle2 size={16}/>{message}<button onClick={()=>setMessage("")}><X size={15}/></button></div>}
       {section==="dashboard"&&<><section className="admin-welcome"><div><span>ADMINISTRATOR WORKSPACE</span><h2>Welcome back, CyberKing 👑</h2><p>Manage users, public-source tools, plans, credits and site operations from one place.</p></div><div className="admin-welcome-icon"><ShieldCheck size={48}/></div></section><div className="admin-stat-grid">{[{label:"Total users",value:counts.profiles||0,icon:Users},{label:"Available tools",value:counts.tools||0,icon:Wrench},{label:"Premium plans",value:counts.premium_plans||0,icon:Crown},{label:"Support tickets",value:counts.support_tickets||0,icon:Ticket},{label:"Payment records",value:counts.payment_records||0,icon:CreditCard},{label:"Referrals",value:counts.referral_claims||0,icon:Activity}].map(card=>{const Icon=card.icon;return <div className="admin-stat" key={card.label}><div><small>{card.label}</small><b>{card.value.toLocaleString()}</b></div><span><Icon size={21}/></span></div>})}</div><div className="admin-dashboard-grid"><div className="admin-panel"><h3><Zap size={18}/> Quick Actions</h3><div className="admin-quick-grid">{[{key:"users" as SectionKey,label:"Manage Users",icon:Users},{key:"tools" as SectionKey,label:"Manage Tools",icon:Wrench},{key:"plans" as SectionKey,label:"Premium Plans",icon:Crown},{key:"announcements" as SectionKey,label:"Announcement",icon:Megaphone},{key:"api" as SectionKey,label:"API Settings",icon:Link2},{key:"logs" as SectionKey,label:"View Logs",icon:FileClock}].map(a=>{const Icon=a.icon;return <button key={a.key} onClick={()=>setSection(a.key)}><Icon size={22}/>{a.label}<ChevronRight size={15}/></button>})}</div></div><div className="admin-panel"><h3><ShieldCheck size={18}/> Security checklist</h3><ul className="admin-checks"><li><CheckCircle2/> Admin role verified from database</li><li><CheckCircle2/> Row-level security policies required</li><li><CheckCircle2/> Public API keys only in browser</li><li><CheckCircle2/> Private person tracking disabled</li></ul></div></div></>}
+      {section==="profile"&&<section className="admin-panel" style={{maxWidth:760}}><div className="admin-panel-head"><div><h3><UserCircle size={18}/> My Administrator Profile</h3><small>View and update the profile connected to your verified admin login.</small></div><span className="admin-tag">Admin</span></div><div className="admin-info-grid"><div><small>Login email</small><b>{authUser.email||"—"}</b></div><div><small>Account role</small><b>Administrator</b></div><div><small>Auth user ID</small><b className="mono">{authUser.id}</b></div></div><div className="admin-form-grid" style={{marginTop:18}}><input value={adminProfileDraft.display_name} onChange={e=>setAdminProfileDraft(v=>({...v,display_name:e.target.value}))} placeholder="Display name" maxLength={60}/><input value={adminProfileDraft.username} onChange={e=>setAdminProfileDraft(v=>({...v,username:e.target.value.replace(/[^a-zA-Z0-9_]/g,"").slice(0,24)}))} placeholder="Username (3–24 characters)" maxLength={24}/></div><textarea value={adminProfileDraft.bio} onChange={e=>setAdminProfileDraft(v=>({...v,bio:e.target.value}))} placeholder="Profile bio" rows={4} maxLength={240} style={{width:"100%",marginTop:12}}/><div className="admin-form-foot"><button className="admin-primary" disabled={adminProfileSaving} onClick={()=>void saveAdminProfile()}><Save size={15}/>{adminProfileSaving?"Saving…":"Save profile"}</button></div></section>}
+      {section==="referrals"&&<section className="admin-panel" style={{marginBottom:18}}><div className="admin-panel-head"><div><h3><Users size={18}/> Referral Reward Settings</h3><small>Set signup and referral credits. Rewards are issued once after email confirmation.</small></div></div><div className="admin-form-grid"><label>Normal signup credits<input type="number" min="0" max="2147483647" step="1" value={referralRewardForm.signup} onChange={e=>setReferralRewardForm(v=>({...v,signup:e.target.value}))}/></label><label>Referred user's credits<input type="number" min="0" max="2147483647" step="1" value={referralRewardForm.referred} onChange={e=>setReferralRewardForm(v=>({...v,referred:e.target.value}))}/></label><label>Referrer reward credits<input type="number" min="0" max="2147483647" step="1" value={referralRewardForm.referrer} onChange={e=>setReferralRewardForm(v=>({...v,referrer:e.target.value}))}/></label></div><div className="admin-form-foot"><button className="admin-primary" disabled={referralSettingsSaving} onClick={()=>void saveReferralSettings()}>{referralSettingsSaving?"Saving…":"Save referral rewards"}</button></div><p className="admin-hint">New users without a referral link receive the normal signup amount. Users who register through a valid referral link receive the referred-user amount, and the owner of that link receives the referrer amount.</p></section>}
       {section==="analytics"&&<div className="admin-stat-grid">{Object.entries(counts).map(([key,value])=><div className="admin-stat" key={key}><div><small>{key.replaceAll("_"," ")}</small><b>{value.toLocaleString()}</b></div><span><Activity size={21}/></span></div>)}</div>}
       {section==="system"&&<div className="admin-panel"><h3><Server size={18}/> Runtime information</h3><div className="admin-info-grid"><div><small>Framework</small><b>Next.js 15</b></div><div><small>Runtime</small><b>Node.js</b></div><div><small>Database</small><b>Supabase PostgreSQL</b></div><div><small>Authentication</small><b>Supabase Auth</b></div><div><small>Admin authorization</small><b>Database role + RLS</b></div><div><small>Environment</small><b>{process.env.NODE_ENV}</b></div></div><p className="admin-hint">This panel reports configured integrations only; it does not invent CPU, storage or uptime metrics that the hosting provider has not supplied.</p></div>}
       {section==="backup"&&<div className="admin-panel"><h3><Database size={18}/> Backup & Restore</h3><div className="admin-warning">Database backups are controlled by your Supabase project and plan. This page does not claim to create a backup from the browser.</div><ol className="admin-steps"><li>Open your Supabase project dashboard.</li><li>Use Database backups / Point-in-Time Recovery if enabled on your plan.</li><li>Before restoring, verify the target project and the backup timestamp.</li><li>After restore, run the app build and verify Auth, RLS and table access.</li></ol><a className="admin-primary-link" href="https://supabase.com/dashboard/projects" target="_blank" rel="noreferrer">Open Supabase dashboard <ArrowRight size={15}/></a></div>}
@@ -363,7 +433,7 @@ export default function AdminPage() {
       </section>}
       {section==="credits"&&<section className="admin-panel" style={{marginBottom:18}}><div className="admin-panel-head"><div><h3><Coins size={18}/> Bulk credit manager</h3><small>Add or deduct credits for all users in one audited operation.</small></div></div><div className="admin-form-grid"><input type="number" step="1" value={bulkCreditDelta} onChange={e=>setBulkCreditDelta(e.target.value)} placeholder="Credits to add / deduct"/><input value={bulkCreditReason} onChange={e=>setBulkCreditReason(e.target.value)} placeholder="Reason shown in credit history"/></div><div className="admin-form-foot"><button className="admin-primary" disabled={bulkCreditBusy} onClick={()=>void bulkGrantCredits()}>{bulkCreditBusy?"Applying…":"Apply to all users"}</button></div></section>}
       {active.table&&<section className="admin-panel admin-data-panel"><div className="admin-panel-head"><div><h3>{active.label}</h3><small>{rows.length} records loaded · maximum 100 shown</small></div><div className="admin-data-actions"><div className="admin-search"><Search size={16}/><input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search records…"/></div><button onClick={()=>void loadRows()}><RefreshCw size={16}/></button></div></div>
-        {addable&&<div className="admin-add-form"><h4><Plus size={16}/> {editingToolId?"Edit tool":"Add "+(section==="tools"?"tool":section==="plans"?"plan":section==="announcements"?"announcement":section==="api"?"integration":section==="developer"?"resource":"setting")}</h4><div className="admin-form-grid"><input placeholder={section==="settings"||section==="appearance"?"Setting key":"Name / title"} value={form.name||""} onChange={e=>setForm(v=>({...v,name:e.target.value}))}/>{section==="tools"&&<><input placeholder="Tool icon (e.g. Globe, Search, MapPin)" value={form.icon||"Wrench"} onChange={e=>setForm(v=>({...v,icon:e.target.value}))}/><input placeholder="API URL (use {} for query)" value={form.url||""} onChange={e=>setForm(v=>({...v,url:e.target.value}))}/><input placeholder="Category" value={form.category||""} onChange={e=>setForm(v=>({...v,category:e.target.value}))}/><input placeholder="Input label" value={form.input_label||"Enter query"} onChange={e=>setForm(v=>({...v,input_label:e.target.value}))}/><input type="number" min="0" placeholder="Credits per use" value={form.credit_cost||"1"} onChange={e=>setForm(v=>({...v,credit_cost:e.target.value}))}/></>}{section==="plans"&&<input placeholder="Price (INR)" value={form.price||""} onChange={e=>setForm(v=>({...v,price:e.target.value}))}/>}{section==="plans"&&<><input placeholder="Credits" value={form.credits||""} onChange={e=>setForm(v=>({...v,credits:e.target.value}))}/><input placeholder="Duration days" value={form.duration||"30"} onChange={e=>setForm(v=>({...v,duration:e.target.value}))}/></>}{(section==="api"||section==="developer")&&<input placeholder="Public URL" value={form.url||""} onChange={e=>setForm(v=>({...v,url:e.target.value}))}/>}{section==="developer"&&<input placeholder="Resource type" value={form.type||"documentation"} onChange={e=>setForm(v=>({...v,type:e.target.value}))}/>}{section==="settings"||section==="appearance"?<textarea placeholder='JSON value, e.g. {"theme":"blue"}' value={form.value||""} onChange={e=>setForm(v=>({...v,value:e.target.value}))}/>:<textarea placeholder="Description / body" value={form.description||""} onChange={e=>setForm(v=>({...v,description:e.target.value}))}/>}</div><div className="admin-form-foot"><label><input type="checkbox" checked={form.enabled==="true"} onChange={e=>setForm(v=>({...v,enabled:e.target.checked?"true":"false"}))}/>{section==="announcements"?"Publish now":section==="api"?"Enable integration":section==="tools"?"Enable tool":"Enabled"}</label><button className="admin-primary" disabled={saving||!form.name?.trim()} onClick={saveRecord}>{saving?"Saving…":editingToolId?"Update tool":"Save"}</button>{editingToolId&&<button className="admin-small" onClick={()=>{setEditingToolId("");setForm({});}}>Cancel edit</button>}</div></div>}
+        {addable&&<div className="admin-add-form"><h4><Plus size={16}/> {editingToolId?"Edit tool":"Add "+(section==="tools"?"tool":section==="plans"?"plan":section==="announcements"?"announcement":section==="api"?"integration":section==="developer"?"resource":"setting")}</h4><div className="admin-form-grid"><input placeholder={section==="settings"||section==="appearance"?"Setting key":"Name / title"} value={form.name||""} onChange={e=>setForm(v=>({...v,name:e.target.value}))}/>{section==="tools"&&<><input placeholder="Tool icon (e.g. Globe, Search, MapPin)" value={form.icon||"Wrench"} onChange={e=>setForm(v=>({...v,icon:e.target.value}))}/><select value={form.handler||"custom"} onChange={e=>setForm(v=>({...v,handler:e.target.value}))}><option value="custom">Custom HTTPS API</option><option value="ip">Built-in IP lookup</option><option value="domain">Built-in domain lookup</option><option value="dns">Built-in DNS lookup</option><option value="email">Built-in email validation</option><option value="url">Built-in URL analysis</option><option value="username">Built-in username links</option><option value="social">Built-in social links</option><option value="breach">Built-in account self-check</option><option value="image">Built-in reverse image links</option></select><input placeholder="API URL (use {} for query; required for custom API)" value={form.url||""} onChange={e=>setForm(v=>({...v,url:e.target.value}))}/><input placeholder="Category" value={form.category||""} onChange={e=>setForm(v=>({...v,category:e.target.value}))}/><input placeholder="Input label" value={form.input_label||"Enter query"} onChange={e=>setForm(v=>({...v,input_label:e.target.value}))}/><input type="number" min="0" max="2147483647" step="1" placeholder="Credits per successful query" value={form.credit_cost??"1"} onChange={e=>setForm(v=>({...v,credit_cost:e.target.value}))}/></>}{section==="plans"&&<input placeholder="Price (INR)" value={form.price||""} onChange={e=>setForm(v=>({...v,price:e.target.value}))}/>}{section==="plans"&&<><input placeholder="Credits" value={form.credits||""} onChange={e=>setForm(v=>({...v,credits:e.target.value}))}/><input placeholder="Duration days" value={form.duration||"30"} onChange={e=>setForm(v=>({...v,duration:e.target.value}))}/></>}{(section==="api"||section==="developer")&&<input placeholder="Public URL" value={form.url||""} onChange={e=>setForm(v=>({...v,url:e.target.value}))}/>}{section==="developer"&&<input placeholder="Resource type" value={form.type||"documentation"} onChange={e=>setForm(v=>({...v,type:e.target.value}))}/>}{section==="settings"||section==="appearance"?<textarea placeholder='JSON value, e.g. {"theme":"blue"}' value={form.value||""} onChange={e=>setForm(v=>({...v,value:e.target.value}))}/>:<textarea placeholder="Description / body" value={form.description||""} onChange={e=>setForm(v=>({...v,description:e.target.value}))}/>}</div><div className="admin-form-foot"><label><input type="checkbox" checked={form.enabled==="true"} onChange={e=>setForm(v=>({...v,enabled:e.target.checked?"true":"false"}))}/>{section==="announcements"?"Publish now":section==="api"?"Enable integration":section==="tools"?"Enable tool":"Enabled"}</label><button className="admin-primary" disabled={saving||!form.name?.trim()} onClick={saveRecord}>{saving?"Saving…":editingToolId?"Update tool":"Save"}</button>{editingToolId&&<button className="admin-small" onClick={()=>{setEditingToolId("");setForm({});}}>Cancel edit</button>}</div></div>}
         {renderRows()}
       </section>}
     </main>
