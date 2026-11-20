@@ -36,3 +36,23 @@
 
 .auth-spinner{width:38px;height:38px;border:3px solid #cfe1ff;border-top-color:#0872f9;border-radius:50%;margin:24px auto 4px;animation:cyber-spin .8s linear infinite}
 @keyframes cyber-spin{to{transform:rotate(360deg)}}
+
+
+/* Structured API response cards */
+.api-result-panel{margin-top:20px;padding:18px;border:1px solid #dce8f8;border-radius:18px;background:linear-gradient(180deg,#f8fbff,#eef5ff);box-shadow:0 12px 30px #102f5d12;color:#10234a}
+.api-result-heading{display:flex;justify-content:space-between;align-items:center;gap:12px;padding-bottom:14px;border-bottom:1px solid #dce8f5}
+.api-result-heading h3{display:flex;align-items:center;gap:8px;margin:5px 0;color:#0b3978;font-size:17px}
+.api-result-heading h3 svg{color:#0b9b68}
+.api-result-heading small{color:#70819c;font-size:11px}
+.api-result-kicker{font-size:9px;font-weight:800;letter-spacing:1.5px;color:#1680e9}
+.api-result-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-top:14px}
+.api-field-card{min-width:0;padding:13px 14px;border:1px solid #e0eaf7;border-radius:13px;background:#fff;box-shadow:0 4px 12px #163d6b08}
+.api-field-label{margin-bottom:7px;color:#71819a;font-size:10px;font-weight:800;letter-spacing:.65px;text-transform:uppercase}
+.api-field-value{color:#142b50;font-size:13px;font-weight:600;line-height:1.65;overflow-wrap:anywhere;white-space:pre-wrap}
+.api-muted{color:#9aa8ba}
+.api-nested-value{max-height:240px;overflow:auto;margin:0;padding:10px;border-radius:9px;background:#f4f7fc;color:#244064;font:11px/1.65 ui-monospace,SFMono-Regular,Menlo,monospace;white-space:pre-wrap;overflow-wrap:anywhere}
+.api-single-value{grid-column:1/-1}
+.api-raw-details{margin-top:13px;padding:12px 13px;border:1px solid #dce8f5;border-radius:12px;background:#fff;color:#24528d;font-size:12px;font-weight:700}
+.api-raw-details summary{cursor:pointer}
+.api-raw-details pre{max-height:360px;overflow:auto;margin:12px 0 0;padding:12px;border-radius:9px;background:#071a36;color:#d9eaff;font:11px/1.65 ui-monospace,SFMono-Regular,Menlo,monospace;white-space:pre-wrap;overflow-wrap:anywhere}
+@media(max-width:650px){.api-result-panel{padding:13px;margin-left:-2px;margin-right:-2px}.api-result-heading{align-items:flex-start;flex-direction:column}.api-result-heading .secondary-btn{width:100%}.api-result-grid{grid-template-columns:1fr;gap:8px}.api-field-card{padding:12px}.api-field-value{font-size:12px}}
