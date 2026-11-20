@@ -7,7 +7,7 @@ import {
   Compass, Crown, Database, Globe2, History, Home, KeyRound, LayoutGrid,
   Link2, LockKeyhole, LogIn, LogOut, Mail, Menu, Moon, Search, Settings,
   Shield, ShieldCheck, Smartphone, Sparkles, User, UserRoundSearch, Users,
-  Wifi, X, Zap, Image as ImageIcon, Share2, Network, Fingerprint, ExternalLink, Save, Edit3, Github, Chrome, Store, Gift, Coins, Camera, Copy, CalendarDays, Wrench
+  Wifi, X, Zap, Image as ImageIcon, Share2, Network, Fingerprint, ExternalLink, Save, Edit3, Github, Chrome, Store, Gift, Coins, Camera, Copy, CalendarDays, Wrench, Instagram, Facebook, Send, MessageCircle
 } from "lucide-react";
 
 type ToolKey = string;
@@ -63,6 +63,8 @@ export default function HomePage() {
   const [username,setUsername]=useState(""); const [avatarUrl,setAvatarUrl]=useState("");
   const [credits,setCredits]=useState(0); const [planName,setPlanName]=useState("Free"); const [planExpires,setPlanExpires]=useState("");
   const [referralCode,setReferralCode]=useState(""); const [referralCount,setReferralCount]=useState(0); const [referralCredits,setReferralCredits]=useState(0);
+  const [referralRewards,setReferralRewards]=useState({signup:3,referred:7,referrer:3});
+  const [referralShareMessage,setReferralShareMessage]=useState("");
   const [plans,setPlans]=useState<{id:string;name:string;description:string;price_inr:number;credits:number;duration_days:number}[]>([]);
   const [paymentQr,setPaymentQr]=useState(""); const [paymentInstructions,setPaymentInstructions]=useState("");
   const [gatewayEnabled,setGatewayEnabled]=useState(false);
@@ -115,7 +117,7 @@ export default function HomePage() {
     void Promise.all([
       supabase.from("tools").select("slug,name,description,category,enabled,handler,credit_cost,input_label,result_note,config"),
       supabase.from("premium_plans").select("id,name,description,price_inr,credits,duration_days").eq("is_active",true).order("price_inr"),
-      supabase.from("site_settings").select("key,value").in("key",["payment_qr_url","payment_instructions"])
+      supabase.from("site_settings").select("key,value").in("key",["payment_qr_url","payment_instructions","default_signup_credits","referral_new_user_credits","referral_reward"])
     ]).then(([t,p,s])=>{
       if(!active)return;
       if(t.data){setDbTools(t.data as typeof dbTools);setEnabledToolSlugs(t.data.filter(row=>row.enabled).map(row=>row.slug));}
@@ -123,6 +125,8 @@ export default function HomePage() {
       const settings=Object.fromEntries((s.data||[]).map(row=>[row.key,row.value]));
       setPaymentQr(String(settings.payment_qr_url||"").replace(/^"|"$/g,""));
       setPaymentInstructions(String(settings.payment_instructions||"").replace(/^"|"$/g,""));
+      const rewardCredits=(value:unknown,fallback:number)=>{const raw=value&&typeof value==="object"?(value as {credits?:unknown}).credits:value;const n=Number(raw);return Number.isSafeInteger(n)&&n>=0?n:fallback;};
+      setReferralRewards({signup:rewardCredits(settings.default_signup_credits,3),referred:rewardCredits(settings.referral_new_user_credits,7),referrer:rewardCredits(settings.referral_reward,3)});
     });
     void supabase.auth.getSession().then(({ data }) => {
       if(!active)return;
@@ -322,6 +326,28 @@ export default function HomePage() {
     setNoticeLoading(false);
   }
 
+  const referralInviteUrl=()=>typeof window!=="undefined"?window.location.origin+"/?ref="+encodeURIComponent(referralCode):"/?ref="+encodeURIComponent(referralCode);
+  async function copyReferralInvite(){
+    const link=referralInviteUrl();
+    try{await navigator.clipboard.writeText(link);setReferralShareMessage("Referral link copied. Send it to your friends.");}
+    catch{setReferralShareMessage("Copy is unavailable here. Select and copy the link shown above.");}
+  }
+  async function shareReferral(platform:"whatsapp"|"telegram"|"facebook"|"instagram"){
+    const link=referralInviteUrl();
+    const text="Join CyberX OSINT with my invite link. You receive "+referralRewards.referred+" credits and I receive "+referralRewards.referrer+" referral credits after your email is verified.";
+    const encoded=encodeURIComponent(text+" "+link);
+    if(platform==="instagram"){
+      await copyReferralInvite();
+      window.open("https://www.instagram.com/direct/new/","_blank","noopener,noreferrer");
+      setReferralShareMessage("Referral link copied. Paste it into an Instagram message.");
+      return;
+    }
+    const url=platform==="whatsapp"?"https://wa.me/?text="+encoded:
+      platform==="telegram"?"https://t.me/share/url?url="+encodeURIComponent(link)+"&text="+encodeURIComponent(text):
+      "https://www.facebook.com/sharer/sharer.php?u="+encodeURIComponent(link);
+    window.open(url,"_blank","noopener,noreferrer");
+  }
+
   async function saveProfile() {
     if (!supabase) return;
     setProfileSaving(true); setProfileMessage("");
@@ -481,7 +507,7 @@ export default function HomePage() {
 
       {page === "Tool" && <div className="content-panel">
         <div className="page-topline"><button className="back-btn" onClick={()=>navTo("All Tools")}><ArrowLeft size={19}/></button><div><strong>{selectedTool.title}</strong><div className="notice" style={{margin:0}}>{selectedTool.description}</div></div></div>
-        <div className="tool-icon" style={{width:58,height:58,marginTop:22}}><PageIcon size={28}/></div>
+        <div className="tool-icon" style={{width:58,height:58,marginTop:22}}><PageIcon size={28}/></div><p className="notice">{role==="admin"?"Admin queries are unlimited.":"Cost per successful query: "+(dbTools.find(item=>item.slug===toolSlug[tool]||item.slug===tool)?.credit_cost??1)+" credits."}</p>
         <label className="field-label">{dbTools.find(item=>item.slug===tool)?.input_label || (tool==="ip"?"Enter public IP address":tool==="domain"||tool==="dns"?"Enter domain name":tool==="email"||tool==="breach"?"Enter email address":tool==="username"||tool==="social"?"Enter public username":tool==="image"?"Enter public image URL":"Enter website URL")}</label>
         <div className="form-row"><input className="field" value={query} onChange={(e)=>setQuery(e.target.value)} placeholder={tool==="ip"?"8.8.8.8":tool==="domain"||tool==="dns"?"example.com":tool==="email"||tool==="breach"?"name@example.com":tool==="username"||tool==="social"?"public_username": "https://example.com/image.jpg"} onKeyDown={(e)=>{if(e.key==="Enter")runTool();}}/><button className="primary-btn" disabled={busy||!query.trim()} onClick={runTool}>{busy?"Checking…":tool==="ip"||tool==="dns"?"Lookup":tool==="domain"||tool==="url"?"Analyze":"Check"} <ArrowRight size={15} style={{verticalAlign:"middle"}}/></button></div>
         {error && <div className="error">{error}</div>}
@@ -552,7 +578,7 @@ export default function HomePage() {
       </div>}
       {page === "History" && <div className="content-panel" style={{maxWidth:"none"}}><div className="section-head" style={{marginTop:0}}><h3>Search history</h3><button className="text-link" onClick={()=>void clearHistory()}>Clear history</button></div>{history.length? <div className="tool-list">{history.map((item,i)=><div className="tool-row" key={i}><div className="tool-icon"><Clock3 size={18}/></div><span><strong>{item.title}</strong><small>{item.query} · {item.date}</small></span></div>)}</div>:<div className="empty">No searches yet. Your activity will show here.</div>}</div>}
 
-      {page === "Profile" && <><div className="profile-card"><div className="profile-avatar">{avatarUrl?<img src={avatarUrl} alt="Profile" style={{width:"100%",height:"100%",borderRadius:"50%",objectFit:"cover"}}/>:<User size={26}/>}</div><div><strong>{profileName || userEmail?.split("@")[0] || "Guest workspace"}</strong><div className="notice" style={{margin:0}}>{userEmail||"Not signed in"}</div></div></div><div className="content-panel"><h3 style={{marginTop:0}}>Edit Profile</h3>{userEmail ? <><label className="field-label">Profile image</label><input className="field" type="file" accept="image/png,image/jpeg,image/webp" onChange={e=>{const file=e.target.files?.[0];if(file)void uploadAvatar(file);}}/><label className="field-label">Name</label><input className="field" value={profileName} onChange={e=>setProfileName(e.target.value)} maxLength={60}/><label className="field-label">Username</label><input className="field" value={username} onChange={e=>setUsername(e.target.value.replace(/[^a-zA-Z0-9_]/g,"").slice(0,24))} placeholder="your_username" maxLength={24}/><label className="field-label">Bio</label><textarea className="field" value={profileBio} onChange={e=>setProfileBio(e.target.value)} maxLength={240} rows={4}/><div className="stats" style={{marginTop:16}}><div className="stat-card"><div className="stat-label">CURRENT PLAN</div><div className="stat-value">{planName}</div><small>{planExpires?new Date(planExpires).toLocaleDateString():"No expiry"}</small></div><div className="stat-card"><div className="stat-label">AVAILABLE CREDITS</div><div className="stat-value">{credits}</div></div></div><div className="content-panel" style={{marginTop:16}}><h3><Gift size={18} style={{verticalAlign:"middle",marginRight:6}}/>Referral Program</h3><p className="notice">Rewards are configured by the administrator.</p><div className="tool-row"><strong>{referralCode||"Generating…"}</strong><button className="secondary-btn" onClick={()=>void navigator.clipboard.writeText(window.location.origin+"/?ref="+referralCode)}><Copy size={14}/> Copy invite link</button></div><div className="stats"><div className="stat-card"><div className="stat-label">REFERRALS</div><div className="stat-value">{referralCount}</div></div><div className="stat-card"><div className="stat-label">CREDITS EARNED</div><div className="stat-value">{referralCredits}</div></div></div></div><button className="primary-btn" style={{marginTop:16}} disabled={profileSaving} onClick={()=>void saveProfile()}><Save size={15} style={{verticalAlign:"middle",marginRight:6}}/>{profileSaving?"Saving…":"Save profile"}</button>{profileMessage&&<p className={profileMessage.includes("successfully")?"notice":"error"}>{profileMessage}</p>}<button className="secondary-btn" style={{marginLeft:8}} onClick={logout}><LogOut size={15} style={{verticalAlign:"middle",marginRight:6}}/>Logout</button></> : <><p className="notice">Sign in or create an account to edit your profile and sync history.</p><button className="primary-btn" onClick={()=>{setAuthMode("login");setPage("Login");}}>Login</button><button className="secondary-btn" style={{marginLeft:8}} onClick={()=>{setAuthMode("register");setPage("Register");}}>Register</button></>}</div></>}
+      {page === "Profile" && <><div className="profile-card"><div className="profile-avatar">{avatarUrl?<img src={avatarUrl} alt="Profile" style={{width:"100%",height:"100%",borderRadius:"50%",objectFit:"cover"}}/>:<User size={26}/>}</div><div><strong>{profileName || userEmail?.split("@")[0] || "Guest workspace"}</strong><div className="notice" style={{margin:0}}>{userEmail||"Not signed in"}</div></div></div><div className="content-panel"><h3 style={{marginTop:0}}>Edit Profile</h3>{userEmail ? <><label className="field-label">Profile image</label><input className="field" type="file" accept="image/png,image/jpeg,image/webp" onChange={e=>{const file=e.target.files?.[0];if(file)void uploadAvatar(file);}}/><label className="field-label">Name</label><input className="field" value={profileName} onChange={e=>setProfileName(e.target.value)} maxLength={60}/><label className="field-label">Username</label><input className="field" value={username} onChange={e=>setUsername(e.target.value.replace(/[^a-zA-Z0-9_]/g,"").slice(0,24))} placeholder="your_username" maxLength={24}/><label className="field-label">Bio</label><textarea className="field" value={profileBio} onChange={e=>setProfileBio(e.target.value)} maxLength={240} rows={4}/><div className="stats" style={{marginTop:16}}><div className="stat-card"><div className="stat-label">CURRENT PLAN</div><div className="stat-value">{planName}</div><small>{planExpires?new Date(planExpires).toLocaleDateString():"No expiry"}</small></div><div className="stat-card"><div className="stat-label">AVAILABLE CREDITS</div><div className="stat-value">{credits}</div></div></div><div className="content-panel" style={{marginTop:16}}><h3><Gift size={18} style={{verticalAlign:"middle",marginRight:6}}/>Referral Program</h3><p className="notice">No referral link: {referralRewards.signup} credits. With your referral link: new member gets {referralRewards.referred} credits and you get {referralRewards.referrer} credits after email verification.</p><label className="field-label">Your personal invite link</label><div className="form-row"><input className="field" value={referralCode?referralInviteUrl():"Generating referral link…"} readOnly/><button className="secondary-btn" disabled={!referralCode} onClick={()=>void copyReferralInvite()}><Copy size={14}/> Copy</button></div><div className="form-row" style={{display:"flex",flexWrap:"wrap",gap:8,marginTop:12}}><button className="secondary-btn" disabled={!referralCode} onClick={()=>void shareReferral("whatsapp")}><MessageCircle size={15}/> WhatsApp</button><button className="secondary-btn" disabled={!referralCode} onClick={()=>void shareReferral("instagram")}><Instagram size={15}/> Instagram</button><button className="secondary-btn" disabled={!referralCode} onClick={()=>void shareReferral("facebook")}><Facebook size={15}/> Facebook</button><button className="secondary-btn" disabled={!referralCode} onClick={()=>void shareReferral("telegram")}><Send size={15}/> Telegram</button></div>{referralShareMessage&&<p className="notice">{referralShareMessage}</p>}<div className="stats"><div className="stat-card"><div className="stat-label">REFERRALS</div><div className="stat-value">{referralCount}</div></div><div className="stat-card"><div className="stat-label">CREDITS EARNED</div><div className="stat-value">{referralCredits}</div></div></div></div><button className="primary-btn" style={{marginTop:16}} disabled={profileSaving} onClick={()=>void saveProfile()}><Save size={15} style={{verticalAlign:"middle",marginRight:6}}/>{profileSaving?"Saving…":"Save profile"}</button>{profileMessage&&<p className={profileMessage.includes("successfully")?"notice":"error"}>{profileMessage}</p>}<button className="secondary-btn" style={{marginLeft:8}} onClick={logout}><LogOut size={15} style={{verticalAlign:"middle",marginRight:6}}/>Logout</button></> : <><p className="notice">Sign in or create an account to edit your profile and sync history.</p><button className="primary-btn" onClick={()=>{setAuthMode("login");setPage("Login");}}>Login</button><button className="secondary-btn" style={{marginLeft:8}} onClick={()=>{setAuthMode("register");setPage("Register");}}>Register</button></>}</div></>}
 
       {page === "Settings" && <div className="content-panel"><h3 style={{marginTop:0}}>Settings & Privacy</h3><div className="tool-row"><div className="tool-icon"><ShieldCheck size={19}/></div><span><strong>Privacy-first research</strong><small>Only public technical information tools are enabled.</small></span><CheckCircle2 color="#12a56a"/></div><div className="tool-row"><div className="tool-icon"><Database size={19}/></div><span><strong>Data storage</strong><small>Signed-in search history is saved securely to your Supabase account.</small></span></div><div className="tool-row"><div className="tool-icon"><LockKeyhole size={19}/></div><span><strong>Authentication</strong><small>{supabase?"Supabase is configured.":"Supabase is not configured yet."}</small></span></div><div className="notice">To enable authentication, set the two public Supabase environment variables shown in .env.example. Never expose a service-role key in client-side code.</div><button className="secondary-btn" style={{marginTop:16}} onClick={()=>navTo("Profile")}>Account settings</button></div>}
     </main>
