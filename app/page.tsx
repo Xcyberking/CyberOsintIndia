@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { createClient } from "@supabase/supabase-js";
 import {
-  Activity, ArrowLeft, ArrowRight, Bell, CheckCircle2, ChevronRight, Clock3,
+  Activity, ArrowLeft, ArrowRight, Bell, CheckCircle2, ChevronRight, Clock3, CircleHelp, CreditCard,
   Compass, Crown, Database, Globe2, History, Home, KeyRound, LayoutGrid,
   Link2, LockKeyhole, LogIn, LogOut, Mail, Menu, Moon, Search, Settings,
   Shield, ShieldCheck, Smartphone, Sparkles, User, UserRoundSearch, Users,
@@ -69,6 +69,10 @@ export default function HomePage() {
 
   const [selectedPlan,setSelectedPlan]=useState(""); const [paymentReference,setPaymentReference]=useState(""); const [paymentProof,setPaymentProof]=useState<File|null>(null);
   const [storeMessage,setStoreMessage]=useState(""); const [savingPayment,setSavingPayment]=useState(false); const [role,setRole]=useState("user");
+  const [myPayments,setMyPayments]=useState<{id:string;provider_reference:string|null;amount_inr:number;status:string;created_at:string;admin_note:string|null;user_note:string|null}[]>([]);
+  const [supportTickets,setSupportTickets]=useState<{id:string;subject:string;message:string;status:string;admin_reply:string|null;created_at:string;updated_at:string}[]>([]);
+  const [supportSubject,setSupportSubject]=useState(""); const [supportMessage,setSupportMessage]=useState("");
+  const [supportNotice,setSupportNotice]=useState(""); const [supportBusy,setSupportBusy]=useState(false);
 
   const toolSlug: Record<ToolKey,string> = { username:"username-tracker", email:"email-validator", ip:"ip-lookup", domain:"domain-lookup", url:"url-safety", dns:"dns-lookup", image:"reverse-image-search", social:"social-media-analyzer", breach:"breach-self-check" };
   const iconFor=(name:string)=>({Globe:Globe2,Globe2,Search,Compass:Compass,Mail,Wifi,Network,Shield:ShieldCheck,Image:ImageIcon,Users,User:UserRoundSearch,Database,Link:Link2,Wrench}[name]||Wrench);
@@ -341,12 +345,51 @@ export default function HomePage() {
   }
   async function submitPayment(){
     if(!supabase||!selectedPlan){setStoreMessage("Choose a plan first.");return;}
-    setSavingPayment(true);setStoreMessage("");const {data:{user}}=await supabase.auth.getUser();const plan=plans.find(p=>p.id===selectedPlan);
+    const utr=paymentReference.trim();
+    if(utr.length<6||utr.length>80){setStoreMessage("Enter a valid UTR / transaction reference (6–80 characters).");return;}
+    setSavingPayment(true);setStoreMessage("");
+    const {data:{user}}=await supabase.auth.getUser();const plan=plans.find(p=>p.id===selectedPlan);
     if(!user||!plan){setStoreMessage("Please sign in and select a valid plan.");setSavingPayment(false);return;}
+    const {data:existing,error:checkError}=await supabase.from("payment_records").select("id").eq("user_id",user.id).eq("status","pending").eq("provider","manual_qr").limit(1);
+    if(checkError){setStoreMessage(checkError.message);setSavingPayment(false);return;}
+    if(existing?.length){setStoreMessage("You already have a payment awaiting admin review. Please wait for its decision.");setSavingPayment(false);return;}
     let proofUrl="";
-    if(paymentProof){const path=user.id+"/payment-"+Date.now()+"."+paymentProof.name.split(".").pop();const {error:e}=await supabase.storage.from("cyberx-user-media").upload(path,paymentProof,{contentType:paymentProof.type});if(e){setStoreMessage(e.message);setSavingPayment(false);return;}const {data}=await supabase.storage.from("cyberx-user-media").createSignedUrl(path,2592000);proofUrl=data?.signedUrl||"";}
-    const {error}=await supabase.from("payment_records").insert({user_id:user.id,plan_id:plan.id,provider:"manual_qr",provider_reference:paymentReference.trim(),amount_inr:plan.price_inr,status:"pending",proof_url:proofUrl,user_note:"Plan: "+plan.name});
-    setStoreMessage(error?error.message:"Payment submitted. Credits activate only after admin verification.");setSavingPayment(false);
+    if(paymentProof){
+      if(!["image/png","image/jpeg","image/webp"].includes(paymentProof.type)||paymentProof.size>5*1024*1024){setStoreMessage("Payment proof must be JPG, PNG or WebP under 5 MB.");setSavingPayment(false);return;}
+      const path=user.id+"/payment-"+Date.now()+"."+paymentProof.name.split(".").pop();
+      const {error:e}=await supabase.storage.from("cyberx-user-media").upload(path,paymentProof,{contentType:paymentProof.type,upsert:false});
+      if(e){setStoreMessage(e.message);setSavingPayment(false);return;}
+      const {data}=await supabase.storage.from("cyberx-user-media").createSignedUrl(path,2592000);proofUrl=data?.signedUrl||"";
+    }
+    const {error}=await supabase.from("payment_records").insert({user_id:user.id,plan_id:plan.id,provider:"manual_qr",provider_reference:utr,amount_inr:plan.price_inr,status:"pending",proof_url:proofUrl,user_note:"Plan: "+plan.name});
+    if(error)setStoreMessage(error.message);
+    else {setStoreMessage("Payment submitted successfully. Status: Pending admin verification. Credits will be added only after approval.");setPaymentReference("");setPaymentProof(null);await loadMyPayments();}
+    setSavingPayment(false);
+  }
+
+  async function loadMyPayments(){
+    if(!supabase)return;
+    const {data:{user}}=await supabase.auth.getUser();if(!user)return;
+    const {data}=await supabase.from("payment_records").select("id,provider_reference,amount_inr,status,created_at,admin_note,user_note").eq("user_id",user.id).order("created_at",{ascending:false}).limit(20);
+    setMyPayments((data||[]) as typeof myPayments);
+  }
+
+  async function loadSupportTickets(){
+    if(!supabase)return;
+    const {data:{user}}=await supabase.auth.getUser();if(!user)return;
+    const {data,error}=await supabase.from("support_tickets").select("id,subject,message,status,admin_reply,created_at,updated_at").eq("user_id",user.id).order("created_at",{ascending:false}).limit(30);
+    if(!error)setSupportTickets((data||[]) as typeof supportTickets);
+  }
+
+  async function submitSupportTicket(){
+    if(!supabase||!supportSubject.trim()||supportMessage.trim().length<10){setSupportNotice("Enter a subject and explain your issue in at least 10 characters.");return;}
+    setSupportBusy(true);setSupportNotice("");
+    const {data:{user}}=await supabase.auth.getUser();
+    if(!user){setSupportNotice("Please sign in to contact support.");setSupportBusy(false);return;}
+    const {error}=await supabase.from("support_tickets").insert({user_id:user.id,subject:supportSubject.trim().slice(0,120),message:supportMessage.trim().slice(0,5000),status:"open"});
+    if(error)setSupportNotice(error.message);
+    else {setSupportSubject("");setSupportMessage("");setSupportNotice("Your support request was sent to the administrator.");await loadSupportTickets();}
+    setSupportBusy(false);
   }
 
   async function clearHistory() {
@@ -367,10 +410,10 @@ export default function HomePage() {
 
   const nav = [
     { label: "Home", icon: Home }, { label: "All Tools", icon: LayoutGrid }, { label: "Store", icon: Store },
-    { label: "History", icon: History }, { label: "Profile", icon: User },
+    { label: "History", icon: History }, { label: "Support", icon: CircleHelp }, { label: "Profile", icon: User },
     { label: "Settings", icon: Settings }
   ];
-  const navTo = (label: string) => { setPage(label); setMobileMenu(false); };
+  const navTo = (label: string) => { setPage(label); setMobileMenu(false); if(label==="Support")void loadSupportTickets(); if(label==="Store")void loadMyPayments(); };
   const PageIcon = selectedTool.icon;
 
   if (page === "Login" || page === "Register") {
@@ -482,9 +525,30 @@ export default function HomePage() {
         {paymentQr&&<div style={{textAlign:"center",padding:16,background:"#fff",borderRadius:18,marginBottom:16}}><img src={paymentQr} alt="Admin payment QR" style={{width:220,maxWidth:"100%",height:"auto",objectFit:"contain"}}/><p style={{color:"#123",fontWeight:700}}>Scan to pay</p></div>}
         {paymentInstructions&&<p className="notice">{paymentInstructions}</p>}
         <div className="tool-grid">{plans.map(plan=><button className="tool-card" key={plan.id} onClick={()=>setSelectedPlan(plan.id)} style={{outline:selectedPlan===plan.id?"2px solid #0872f9":undefined}}><div className="tool-icon"><Crown size={20}/></div><strong>{plan.name}</strong><div className="stat-value">₹{plan.price_inr}</div><small>{plan.credits} credits · {plan.duration_days} days</small><small>{plan.description}</small></button>)}</div>
-        {selectedPlan&&(gatewayEnabled?<div style={{marginTop:18}}><button className="primary-btn" disabled={savingPayment} onClick={()=>void startGatewayPayment(selectedPlan)}>{savingPayment?"Opening secure checkout…":"Pay securely with Razorpay"}</button><p className="notice">Credits activate only after the server verifies the captured Razorpay payment.</p></div>:<div style={{marginTop:18}}><label className="field-label">Payment reference / UTR</label><input className="field" value={paymentReference} onChange={e=>setPaymentReference(e.target.value)} placeholder="Enter UTR / transaction reference"/><label className="field-label">Payment screenshot (optional)</label><input className="field" type="file" accept="image/png,image/jpeg,image/webp" onChange={e=>setPaymentProof(e.target.files?.[0]||null)}/><button className="primary-btn" style={{marginTop:14}} disabled={savingPayment} onClick={()=>void submitPayment()}>{savingPayment?"Submitting…":"Submit payment for review"}</button></div>)}
-        {storeMessage&&<p className={storeMessage.includes("successfully")||storeMessage.startsWith("Payment submitted")?"notice":"error"}>{storeMessage}</p>}
-        <p className="notice">{gatewayEnabled?"Online payment is verified server-side before credits are granted.":"Online gateway is disabled. Manual QR payments require admin review."}</p>
+        {selectedPlan&&(gatewayEnabled?<div style={{marginTop:18}}><button className="primary-btn" disabled={savingPayment} onClick={()=>void startGatewayPayment(selectedPlan)}>Pay securely with Razorpay</button><p className="notice">Credits activate only after the server verifies the captured payment.</p></div>:<div style={{marginTop:18,padding:16,border:"1px solid #dce8f8",borderRadius:14,background:"#f7faff"}}>
+          <h3 style={{marginTop:0}}>Submit payment details</h3><p className="notice" style={{color:"#647794"}}>After scanning the QR and paying the exact plan amount, enter the UTR/reference shown by your payment app. Your plan remains pending until an administrator verifies and approves it.</p>
+          <label className="field-label">UPI UTR / Transaction ID *</label><input className="field" value={paymentReference} onChange={e=>setPaymentReference(e.target.value)} placeholder="Enter UTR / transaction reference" maxLength={80}/>
+          <label className="field-label">Payment screenshot (optional)</label><input className="field" type="file" accept="image/png,image/jpeg,image/webp" onChange={e=>setPaymentProof(e.target.files?.[0]||null)}/>
+          <button className="primary-btn" style={{marginTop:14}} disabled={savingPayment} onClick={()=>void submitPayment()}>{savingPayment?"Submitting…":"Submit for admin approval"}</button>
+        </div>)}
+        {storeMessage&&<p className={storeMessage.includes("successfully")?"notice":"error"}>{storeMessage}</p>}
+        <div className="section-head"><h3>My payment requests</h3><button className="text-link" onClick={()=>void loadMyPayments()}>Refresh</button></div>
+        {myPayments.length?<div className="tool-list">{myPayments.map(item=><div className="tool-row" key={item.id}><div className="tool-icon"><CreditCard size={18}/></div><span><strong>₹{item.amount_inr} · {item.status==="pending"?"Awaiting review":item.status==="success"?"Approved":"Rejected"}</strong><small>UTR: {item.provider_reference||"—"} · {new Date(item.created_at).toLocaleString()}</small>{item.admin_note&&<small>Admin note: {item.admin_note}</small>}</span></div>)}</div>:<div className="empty">No payment requests submitted yet.</div>}
+        <p className="notice">{gatewayEnabled?"Online gateway payments are verified server-side.":"Manual QR payments are reviewed by an administrator; do not submit the same UTR more than once."}</p>
+      </div>}
+      {page === "Support" && <div className="content-panel" style={{maxWidth:"none"}}>
+        <div className="section-head" style={{marginTop:0}}><h3><CircleHelp size={18} style={{verticalAlign:"middle",marginRight:8}}/>Support Center</h3><span className="notice">Admin assistance</span></div>
+        <p className="notice">Describe the problem you are facing. Your request will be sent privately to the administrator, and their reply will appear here.</p>
+        <label className="field-label">Issue subject</label><input className="field" value={supportSubject} onChange={e=>setSupportSubject(e.target.value)} placeholder="Example: Credits not updated" maxLength={120}/>
+        <label className="field-label">Describe your issue</label><textarea className="field" rows={5} value={supportMessage} onChange={e=>setSupportMessage(e.target.value)} placeholder="Explain what happened, including the page or feature involved…" maxLength={5000}/>
+        <button className="primary-btn" style={{marginTop:14}} disabled={supportBusy} onClick={()=>void submitSupportTicket()}>{supportBusy?"Sending…":"Send support request"}</button>
+        {supportNotice&&<p className={supportNotice.includes("sent")?"notice":"error"}>{supportNotice}</p>}
+        <div className="section-head"><h3>My support requests</h3><button className="text-link" onClick={()=>void loadSupportTickets()}>Refresh</button></div>
+        {supportTickets.length?<div className="tool-list">{supportTickets.map(ticket=><article className="content-panel" key={ticket.id} style={{maxWidth:"none",marginBottom:10}}>
+          <div style={{display:"flex",justifyContent:"space-between",gap:10,alignItems:"center"}}><strong>{ticket.subject}</strong><span style={{fontSize:11,fontWeight:700,color:"#1261b7"}}>{ticket.status.replace("_"," ")}</span></div>
+          <p style={{whiteSpace:"pre-wrap",fontSize:13,lineHeight:1.6}}>{ticket.message}</p><small className="notice">{new Date(ticket.created_at).toLocaleString()}</small>
+          {ticket.admin_reply&&<div style={{marginTop:12,padding:13,borderRadius:12,background:"#edf6ff",border:"1px solid #d6e9ff"}}><strong>Administrator reply</strong><p style={{whiteSpace:"pre-wrap",marginBottom:0,fontSize:13,lineHeight:1.6}}>{ticket.admin_reply}</p></div>}
+        </article>)}</div>:<div className="empty">You have not contacted support yet.</div>}
       </div>}
       {page === "History" && <div className="content-panel" style={{maxWidth:"none"}}><div className="section-head" style={{marginTop:0}}><h3>Search history</h3><button className="text-link" onClick={()=>void clearHistory()}>Clear history</button></div>{history.length? <div className="tool-list">{history.map((item,i)=><div className="tool-row" key={i}><div className="tool-icon"><Clock3 size={18}/></div><span><strong>{item.title}</strong><small>{item.query} · {item.date}</small></span></div>)}</div>:<div className="empty">No searches yet. Your activity will show here.</div>}</div>}
 
@@ -493,6 +557,6 @@ export default function HomePage() {
       {page === "Settings" && <div className="content-panel"><h3 style={{marginTop:0}}>Settings & Privacy</h3><div className="tool-row"><div className="tool-icon"><ShieldCheck size={19}/></div><span><strong>Privacy-first research</strong><small>Only public technical information tools are enabled.</small></span><CheckCircle2 color="#12a56a"/></div><div className="tool-row"><div className="tool-icon"><Database size={19}/></div><span><strong>Data storage</strong><small>Signed-in search history is saved securely to your Supabase account.</small></span></div><div className="tool-row"><div className="tool-icon"><LockKeyhole size={19}/></div><span><strong>Authentication</strong><small>{supabase?"Supabase is configured.":"Supabase is not configured yet."}</small></span></div><div className="notice">To enable authentication, set the two public Supabase environment variables shown in .env.example. Never expose a service-role key in client-side code.</div><button className="secondary-btn" style={{marginTop:16}} onClick={()=>navTo("Profile")}>Account settings</button></div>}
     </main>
 
-    <nav className="mobile-nav">{[{label:"Home",icon:Home},{label:"Tools",icon:LayoutGrid},{label:"Store",icon:Store},{label:"History",icon:History},{label:"Profile",icon:User}].map(({label,icon:Icon})=><button key={label} className={(page===label||(label==="Tools"&&page==="All Tools")||(label==="Tools"&&page==="Tool")?"active":"")} onClick={()=>navTo(label==="Tools"?"All Tools":label)}><Icon/><span>{label}</span></button>)}</nav>
+    <nav className="mobile-nav">{[{label:"Home",icon:Home},{label:"Tools",icon:LayoutGrid},{label:"Store",icon:Store},{label:"Support",icon:CircleHelp},{label:"Profile",icon:User}].map(({label,icon:Icon})=><button key={label} className={(page===label||(label==="Tools"&&page==="All Tools")||(label==="Tools"&&page==="Tool")?"active":"")} onClick={()=>navTo(label==="Tools"?"All Tools":label)}><Icon/><span>{label}</span></button>)}</nav>
   </div>;
 }
