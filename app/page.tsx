@@ -443,30 +443,34 @@ export default function HomePage() {
         <div className="form-row"><input className="field" value={query} onChange={(e)=>setQuery(e.target.value)} placeholder={tool==="ip"?"8.8.8.8":tool==="domain"||tool==="dns"?"example.com":tool==="email"||tool==="breach"?"name@example.com":tool==="username"||tool==="social"?"public_username": "https://example.com/image.jpg"} onKeyDown={(e)=>{if(e.key==="Enter")runTool();}}/><button className="primary-btn" disabled={busy||!query.trim()} onClick={runTool}>{busy?"Checking…":tool==="ip"||tool==="dns"?"Lookup":tool==="domain"||tool==="url"?"Analyze":"Check"} <ArrowRight size={15} style={{verticalAlign:"middle"}}/></button></div>
         {error && <div className="error">{error}</div>}
         {result !== null && (
-          <div className="result-box">
-            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8,color:"#0872f9",fontWeight:800,marginBottom:10}}>
-              <span><CheckCircle2 size={17}/> API Response</span>
+          <section className="api-result-panel" aria-live="polite">
+            <div className="api-result-heading">
+              <div><span className="api-result-kicker">RESEARCH OUTPUT</span><h3><CheckCircle2 size={19}/> API Response</h3><small>Structured response · {Array.isArray(result) ? result.length+" items" : result && typeof result==="object" ? Object.keys(result as Record<string,unknown>).length+" fields" : "1 value"}</small></div>
               <button className="secondary-btn" onClick={()=>{
                 const blob=new Blob([JSON.stringify(result,null,2)],{type:"application/json"});
                 const downloadUrl=URL.createObjectURL(blob);
                 const link=document.createElement("a");
                 link.href=downloadUrl;
                 link.download=(selectedTool.key||"tool")+"-response.json";
-                document.body.appendChild(link);
-                link.click();
-                link.remove();
-                URL.revokeObjectURL(downloadUrl);
+                document.body.appendChild(link);link.click();link.remove();URL.revokeObjectURL(downloadUrl);
               }}>Download JSON</button>
             </div>
-            <div style={{padding:12,borderRadius:12,background:"#f5f8ff",color:"#14294d",marginBottom:12,overflowWrap:"anywhere"}}>
-              <strong>Response</strong>
-              <pre style={{margin:"8px 0 0",fontFamily:"inherit",whiteSpace:"pre-wrap"}}>{typeof result==="string"?result:JSON.stringify(result,null,2)}</pre>
+            <div className="api-result-grid">
+              {result && typeof result==="object" && !Array.isArray(result) ? Object.entries(result as Record<string,unknown>).map(([key,value])=>(
+                <article className="api-field-card" key={key}>
+                  <div className="api-field-label">{key.replace(/[_-]/g," ")}</div>
+                  {value===null ? <div className="api-field-value api-muted">—</div> :
+                    typeof value==="object" ? <pre className="api-nested-value">{JSON.stringify(value,null,2)}</pre> :
+                    <div className="api-field-value">{String(value)}</div>}
+                </article>
+              )) : Array.isArray(result) ? result.map((value,index)=>(
+                <article className="api-field-card" key={index}><div className="api-field-label">Result {index+1}</div>
+                  {value && typeof value==="object" ? <pre className="api-nested-value">{JSON.stringify(value,null,2)}</pre> : <div className="api-field-value">{String(value??"—")}</div>}
+                </article>
+              )) : <article className="api-field-card api-single-value"><div className="api-field-label">Response value</div><div className="api-field-value">{String(result)}</div></article>}
             </div>
-            <details>
-              <summary style={{cursor:"pointer",fontWeight:800,color:"#075fe0"}}>View raw JSON</summary>
-              <pre style={{margin:"10px 0 0",fontFamily:"monospace",whiteSpace:"pre-wrap",overflowWrap:"anywhere"}}>{JSON.stringify(result,null,2)}</pre>
-            </details>
-          </div>
+            <details className="api-raw-details"><summary>View raw JSON</summary><pre>{JSON.stringify(result,null,2)}</pre></details>
+          </section>
         )}
         <p className="notice"><ShieldCheck size={13} style={{verticalAlign:"middle",marginRight:5}}/>Use only information you are authorized to access. Results may be approximate or incomplete; verify important details with primary sources.</p>
       </div>}
