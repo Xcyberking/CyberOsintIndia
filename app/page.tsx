@@ -50,6 +50,7 @@ export default function HomePage() {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [displayName, setDisplayName] = useState("");
   const [userEmail, setUserEmail] = useState("");
+  const [userId, setUserId] = useState("");
   const [profileName, setProfileName] = useState("");
   const [profileBio, setProfileBio] = useState("");
   const [profileSaving, setProfileSaving] = useState(false);
@@ -90,10 +91,11 @@ export default function HomePage() {
     const { data: profile } = await supabase.from("profiles").select("status,display_name,bio,username,avatar_url,credits,role,plan_name,plan_expires_at,referral_code").eq("id", user.id).maybeSingle();
     if (profile?.status && profile.status !== "active") {
       await supabase.auth.signOut();
-      setUserEmail("");
+      setUserEmail(""); setUserId("");
       setAuthMessage("This account is currently suspended or restricted. Contact the site administrator.");
       return;
     }
+    setUserId(user.id);
     setUserEmail(user.email || "");
     setProfileName(profile?.display_name || (typeof user.user_metadata?.name === "string" ? user.user_metadata.name : user.email?.split("@")[0]) || "");
     setProfileBio(profile?.bio || ""); setUsername(profile?.username||""); if(profile?.avatar_url){const {data:av}=await supabase.storage.from("cyberx-avatars").createSignedUrl(profile.avatar_url,3600);setAvatarUrl(av?.signedUrl||"");}else setAvatarUrl(""); setCredits(profile?.credits||0); setRole(profile?.role||"user"); setPlanName(profile?.plan_name||"Free"); setPlanExpires(profile?.plan_expires_at||""); setReferralCode(profile?.referral_code||"");
@@ -135,12 +137,30 @@ export default function HomePage() {
     });
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       if (!active) return;
-      if (!session) { setUserEmail(""); setProfileName(""); setProfileBio(""); setHistory([]); }
+      if (!session) { setUserEmail(""); setUserId(""); setProfileName(""); setProfileBio(""); setHistory([]); }
       else { setUserEmail(session.user.email || ""); Promise.resolve().then(() => void hydrateUser(session.user)); }
     });
     return () => { active = false; subscription.unsubscribe(); };
   }, []);
 
+
+  // Keep the displayed balance synchronized with database changes from this tab, other tabs, and admin actions.
+  useEffect(() => {
+    if (!supabase || !userId) return;
+    const channel = supabase
+      .channel("profile-credit-balance-" + userId)
+      .on("postgres_changes", {
+        event: "UPDATE",
+        schema: "public",
+        table: "profiles",
+        filter: "id=eq." + userId
+      }, (payload) => {
+        const nextCredits = Number((payload.new as { credits?: unknown }).credits);
+        if (Number.isSafeInteger(nextCredits) && nextCredits >= 0) setCredits(nextCredits);
+      })
+      .subscribe();
+    return () => { void supabase.removeChannel(channel); };
+  }, [userId]);
 
   useEffect(()=>{
     if(page!=="Store"||!userEmail||!supabase)return;
@@ -431,7 +451,7 @@ export default function HomePage() {
 
   async function logout() {
     if (supabase) await supabase.auth.signOut();
-    setUserEmail(""); setProfileName(""); setProfileBio(""); setHistory([]); setPage("Home");
+    setUserEmail(""); setUserId(""); setProfileName(""); setProfileBio(""); setHistory([]); setPage("Home");
   }
 
   const nav = [
