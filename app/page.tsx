@@ -58,6 +58,7 @@ export default function HomePage() {
   const [announcements, setAnnouncements] = useState<{title:string;body:string;created_at:string}[]>([]);
   const [noticeLoading, setNoticeLoading] = useState(false);
   const [authMessage, setAuthMessage] = useState("");
+  const [authBusy, setAuthBusy] = useState(false);
   const [mobileMenu, setMobileMenu] = useState(false);
   const [enabledToolSlugs, setEnabledToolSlugs] = useState<string[]>(["username-tracker","email-validator","ip-lookup","domain-lookup","url-safety","dns-lookup","reverse-image-search","social-media-analyzer","breach-self-check"]);
   const [dbTools,setDbTools]=useState<{slug:string;name:string;description:string;category:string;enabled:boolean;handler:string;credit_cost:number;input_label:string;result_note:string;config?:Record<string,unknown>}[]>([]);
@@ -323,19 +324,85 @@ export default function HomePage() {
   }
 
   async function authenticate() {
+    if (authBusy) return;
     setAuthMessage("");
-    if (authMode === "register" && password.length < 8) { setAuthMessage("Use a password with at least 8 characters."); return; }
-    if (authMode === "register" && password !== confirmPassword) { setAuthMessage("Passwords do not match."); return; }
-    if (!supabase) { setAuthMessage("Supabase is not configured. Check the public Supabase URL and publishable key in hosting settings."); return; }
-    const response = authMode === "login"
-      ? await supabase.auth.signInWithPassword({ email, password })
-      : await supabase.auth.signUp({ email, password, options: { data: { name: displayName, referral_code: new URLSearchParams(window.location.search).get("ref") || "" } } });
-    if (response.error) setAuthMessage(response.error.message);
-    else if (authMode === "register" && !response.data.session) setAuthMessage("Account created. Check your email to confirm your address.");
-    else if (response.data.user && response.data.session) {
-      await hydrateUser(response.data.user);
-      setPage("Home");
-    } else { setAuthMessage("Account created. Check your email to confirm your address."); }
+    const normalizedEmail = email.trim().toLowerCase();
+    if (!normalizedEmail || !/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(normalizedEmail)) {
+      setAuthMessage("Enter a valid email address.");
+      return;
+    }
+    if (!password) {
+      setAuthMessage("Enter your password.");
+      return;
+    }
+    if (authMode === "register" && !displayName.trim()) {
+      setAuthMessage("Enter your display name.");
+      return;
+    }
+    if (authMode === "register" && password.length < 8) {
+      setAuthMessage("Use a password with at least 8 characters.");
+      return;
+    }
+    if (authMode === "register" && password !== confirmPassword) {
+      setAuthMessage("Passwords do not match.");
+      return;
+    }
+    if (!supabase) {
+      setAuthMessage("Supabase is not configured. Check NEXT_PUBLIC_SUPABASE_URL and the public publishable key in hosting settings.");
+      return;
+    }
+
+    setAuthBusy(true);
+    try {
+      const response = authMode === "login"
+        ? await supabase.auth.signInWithPassword({ email: normalizedEmail, password })
+        : await supabase.auth.signUp({
+            email: normalizedEmail,
+            password,
+            options: {
+              data: {
+                name: displayName.trim(),
+                referral_code: new URLSearchParams(window.location.search).get("ref") || ""
+              },
+              emailRedirectTo: window.location.origin + "/auth/callback?next=%2F"
+            }
+          });
+
+      if (response.error) {
+        const message = response.error.message;
+        if (/email not confirmed/i.test(message)) {
+          setAuthMessage("Your email is not verified yet. Open the confirmation email sent by CyberX OSINT, verify it, then log in.");
+        } else if (/invalid login credentials/i.test(message)) {
+          setAuthMessage("Email or password is incorrect. If this is a new account, register first and verify your email.");
+        } else if (/user already registered/i.test(message)) {
+          setAuthMessage("This email already has an account. Switch to Login or use Forgot password.");
+        } else {
+          setAuthMessage(message);
+        }
+        return;
+      }
+
+      if (authMode === "register" && response.data.user && !response.data.session) {
+        setAuthMessage("Account created successfully. Check your inbox (and spam folder) and verify your email before logging in.");
+        setPassword("");
+        setConfirmPassword("");
+        return;
+      }
+
+      if (response.data.user && response.data.session) {
+        await hydrateUser(response.data.user);
+        setPage("Home");
+        setAuthMessage("");
+      } else {
+        setAuthMessage(authMode === "register"
+          ? "Account created. Verify your email, then log in."
+          : "Login did not return an active session. Please try again.");
+      }
+    } catch (error) {
+      setAuthMessage(error instanceof Error ? error.message : "Authentication failed. Please try again.");
+    } finally {
+      setAuthBusy(false);
+    }
   }
   async function openNotifications() {
     setPage("Notifications"); setNoticeLoading(true);
@@ -472,8 +539,8 @@ export default function HomePage() {
       <label className="field-label">Password</label><input className="field" type="password" placeholder="Enter password" value={password} onChange={(e)=>setPassword(e.target.value)}/>
       {authMode === "register" && <><label className="field-label">Confirm password</label><input className="field" type="password" placeholder="Confirm password" value={confirmPassword} onChange={e=>setConfirmPassword(e.target.value)}/></>}
       {authMode === "login" && <button className="text-link" style={{marginTop:10}} onClick={async()=>{if(!supabase||!email.trim()){setAuthMessage("Enter your email address first.");return;}const {error}=await supabase.auth.resetPasswordForEmail(email.trim(),{redirectTo:window.location.origin});setAuthMessage(error?error.message:"Password reset email sent if the account exists.");}}>Forgot password?</button>}
-      <button className="primary-btn" style={{width:"100%",marginTop:20}} onClick={authenticate}>{authMode === "login" ? "Login" : "Create account"} <ArrowRight size={15} style={{verticalAlign:"middle",marginLeft:5}}/></button>
-      {authMessage && <p className="error">{authMessage}</p>}
+      <button type="button" className="primary-btn" style={{width:"100%",marginTop:20}} onClick={authenticate} disabled={authBusy}>{authBusy ? "Please wait…" : authMode === "login" ? "Login" : "Create account"} {!authBusy && <ArrowRight size={15} style={{verticalAlign:"middle",marginLeft:5}}/>}</button>
+      {authMessage && <p className={authMessage.startsWith("Account created") ? "notice" : "error"} role="status">{authMessage}</p>}
       <div className="auth-switch">{authMode === "login" ? "Don't have an account?" : "Already registered?"} <button onClick={()=>{setAuthMode(authMode==="login"?"register":"login");setAuthMessage("");setConfirmPassword("");}}>{authMode==="login"?"Register":"Login"}</button></div>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:9,marginTop:16}}>
         <button className="secondary-btn" onClick={async()=>{if(!supabase){setAuthMessage("Supabase is not configured.");return;}const {error}=await supabase.auth.signInWithOAuth({provider:"google",options:{redirectTo:window.location.origin+"/auth/callback?next=%2F",scopes:"openid email profile"}});if(error)setAuthMessage(error.message);}}><Chrome size={15} style={{verticalAlign:"middle",marginRight:6}}/>Google</button>
