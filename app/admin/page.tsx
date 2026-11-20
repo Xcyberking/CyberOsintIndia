@@ -12,7 +12,7 @@ import {
 import "./admin.css";
 
 type Row = Record<string, unknown>;
-type SectionKey = "dashboard"|"profile"|"users"|"banned"|"tools"|"plans"|"payments"|"credits"|"referrals"|"settings|"appearance"|"announcements"|"api"|"backup"|"logs"|"developer"|"support"|"analytics"|"system"|"about";
+type SectionKey = "dashboard"|"profile"|"users"|"banned"|"tools"|"plans"|"payments"|"credits"|"referrals"|"settings"|"appearance"|"announcements"|"api"|"backup"|"logs"|"developer"|"support"|"analytics"|"system"|"about";
 type Section = { key: SectionKey; label: string; table?: string; description: string; icon: typeof Shield; };
 const sections: Section[] = [
   {key:"dashboard",label:"Dashboard",description:"Overview of your OSINT workspace",icon:LayoutDashboard},
