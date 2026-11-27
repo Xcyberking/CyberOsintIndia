@@ -15,7 +15,9 @@ export function adminDb() { return getFirestore(getAdminApp()); }
 export async function verifyBearer(request: Request) {
   const token = (request.headers.get("authorization") || "").replace(/^Bearer\s+/i, "");
   if (!token) throw new Error("Sign in to continue.");
-  return adminAuth().verifyIdToken(token);
+  const decoded = await adminAuth().verifyIdToken(token);
+  if (decoded.email_verified !== true) throw new Error("Verify your email address before using this service.");
+  return decoded;
 }
 export async function requireAdmin(request: Request) {
   const decoded = await verifyBearer(request);
