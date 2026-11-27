@@ -4,7 +4,7 @@ import { firebaseAuth, firestore, firebaseStorage, firebaseConfigured } from "./
 import {
   createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut,
   onAuthStateChanged, sendPasswordResetEmail, sendEmailVerification,
-  updateProfile, GoogleAuthProvider, GithubAuthProvider, signInWithPopup
+  updateProfile, GoogleAuthProvider, GithubAuthProvider, signInWithPopup, signInWithRedirect
 } from "firebase/auth";
 import {
   collection, doc, getDoc, getDocs, addDoc, setDoc, updateDoc, deleteDoc,
@@ -13,8 +13,32 @@ import {
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 
 type AnyRow = Record<string, any>;
-const err = (error: unknown) => ({ message: error instanceof Error ? error.message : String(error) });
-async function ensureProfile(user: any) {
+
+const AUTH_MESSAGES: Record<string, string> = {
+  "auth/invalid-credential": "Invalid login credentials. Email or password is incorrect.",
+  "auth/invalid-login-credentials": "Invalid login credentials. Email or password is incorrect.",
+  "auth/wrong-password": "Invalid login credentials. Email or password is incorrect.",
+  "auth/user-not-found": "Invalid login credentials. Email or password is incorrect.",
+  "auth/invalid-email": "Enter a valid email address.",
+  "auth/email-already-in-use": "User already registered. This email already has an account.",
+  "auth/weak-password": "Password is too weak. Use at least 8 characters.",
+  "auth/too-many-requests": "Too many attempts. Wait a few minutes and try again.",
+  "auth/network-request-failed": "Network error. Check your connection and try again.",
+  "auth/user-disabled": "This account has been disabled by the administrator.",
+  "auth/operation-not-allowed": "This sign-in method is not enabled in Firebase Authentication.",
+  "auth/unauthorized-domain": "This domain is not authorized. Add it in Firebase Console > Authentication > Settings > Authorized domains.",
+  "auth/popup-blocked": "Popup was blocked by the browser. Allow popups and try again.",
+  "auth/account-exists-with-different-credential": "An account already exists with this email using a different sign-in method.",
+  "auth/invalid-api-key": "Invalid Firebase API key. Check NEXT_PUBLIC_FIREBASE_API_KEY.",
+  "permission-denied": "Permission denied by Firestore rules. Deploy the latest firestore.rules."
+};
+const err = (error: unknown) => {
+  const code = (error as { code?: string })?.code || "";
+  if (code && AUTH_MESSAGES[code]) return { message: AUTH_MESSAGES[code], code };
+  return { message: error instanceof Error ? error.message : String(error), code };
+};
+
+async function createProfileIfMissing(user: any) {
   if (!firestore || !user) return;
   const profileRef = doc(firestore, "profiles", user.uid);
   const existing = await getDoc(profileRef);
@@ -26,10 +50,24 @@ async function ensureProfile(user: any) {
     created_at: new Date().toISOString(), updated_at: new Date().toISOString()
   });
 }
+// Dedupe concurrent calls (onAuthStateChanged + the sign-in handler both call this on first Google login;
+// a second setDoc on an existing doc is an "update" and gets rejected by the rules).
+const profileJobs = new Map<string, Promise<void>>();
+function ensureProfile(user: any): Promise<void> {
+  if (!firestore || !user) return Promise.resolve();
+  let job = profileJobs.get(user.uid);
+  if (!job) {
+    job = createProfileIfMissing(user).finally(() => { profileJobs.delete(user.uid); });
+    profileJobs.set(user.uid, job);
+  }
+  return job;
+}
 async function applySignupRewards(user: any) {
   if (!user) return;
-  const token = await user.getIdToken();
-  await fetch("/api/firebase/signup", { method: "POST", headers: { Authorization: "Bearer " + token } });
+  try {
+    const token = await user.getIdToken();
+    await fetch("/api/firebase/signup", { method: "POST", headers: { Authorization: "Bearer " + token } });
+  } catch {}
 }
 const authUser = (user: any) => user ? ({
   id: user.uid, uid: user.uid, email: user.email, email_confirmed_at: user.emailVerified ? new Date().toISOString() : null,
@@ -97,7 +135,11 @@ export function createClient(_url?: string, _key?: string) {
     from: (table: string) => new QueryBuilder(table),
     auth: {
       getUser: async () => ({ data: { user: authUser(firebaseAuth?.currentUser) }, error: null }),
-      getSession: async () => ({ data: { session: firebaseAuth?.currentUser ? { user: authUser(firebaseAuth.currentUser) } : null }, error: null }),
+      getSession: async () => {
+        // currentUser is null until Firebase restores the persisted session; wait for it once.
+        if (firebaseAuth) await firebaseAuth.authStateReady();
+        return { data: { session: firebaseAuth?.currentUser?.emailVerified ? { user: authUser(firebaseAuth.currentUser) } : null }, error: null };
+      },
       onAuthStateChange: (_cb: any) => {
         const unsubscribe = firebaseAuth ? onAuthStateChanged(firebaseAuth, user => {
           if (!user || !user.emailVerified) { _cb("SIGNED_OUT", null); return; }
@@ -110,7 +152,12 @@ export function createClient(_url?: string, _key?: string) {
         try {
           if (!firebaseAuth) throw new Error("Firebase is not configured.");
           const c = await signInWithEmailAndPassword(firebaseAuth, email, password);
-          if (!c.user.emailVerified) { await signOut(firebaseAuth); throw new Error("Email not confirmed. Verify the email sent by Firebase before logging in."); }
+          if (!c.user.emailVerified) {
+            let resent = false;
+            try { await sendEmailVerification(c.user); resent = true; } catch {}
+            await signOut(firebaseAuth);
+            throw new Error("Email not confirmed. " + (resent ? "A new verification email was just sent. " : "") + "Verify the email sent by Firebase (check spam), then log in.");
+          }
           await ensureProfile(c.user);
           await applySignupRewards(c.user);
           return { data: { user: authUser(c.user), session: { user: authUser(c.user) } }, error: null };
@@ -130,7 +177,27 @@ export function createClient(_url?: string, _key?: string) {
       },
       resetPasswordForEmail: async (email: string, _options?: any) => { try { if (!firebaseAuth) throw new Error("Firebase is not configured."); await sendPasswordResetEmail(firebaseAuth, email); return { error: null }; } catch (e) { return { error: err(e) }; } },
       signInWithOAuth: async ({ provider }: any) => {
-        try { if (!firebaseAuth) throw new Error("Firebase is not configured."); const p = provider === "github" ? new GithubAuthProvider() : new GoogleAuthProvider(); const result = await signInWithPopup(firebaseAuth, p); await ensureProfile(result.user); await applySignupRewards(result.user); return { error: null }; } catch (e) { return { error: err(e) }; }
+        if (!firebaseAuth) return { error: { message: "Firebase is not configured." } };
+        const p: any = provider === "github" ? new GithubAuthProvider() : new GoogleAuthProvider();
+        if (provider !== "github") p.setCustomParameters({ prompt: "select_account" });
+        try {
+          const result = await signInWithPopup(firebaseAuth, p);
+          if (!result.user.emailVerified) {
+            await signOut(firebaseAuth);
+            throw new Error("Your " + (provider === "github" ? "GitHub" : "Google") + " email is not verified. Verify it with the provider and try again.");
+          }
+          await ensureProfile(result.user);
+          await applySignupRewards(result.user);
+          return { error: null };
+        } catch (e) {
+          const code = (e as { code?: string })?.code || "";
+          if (code === "auth/popup-closed-by-user" || code === "auth/cancelled-popup-request") return { error: null };
+          if (code === "auth/popup-blocked") {
+            // Popup blocked (common on mobile in-app browsers): fall back to a full-page redirect.
+            try { await signInWithRedirect(firebaseAuth, p); return { error: null }; } catch (e2) { return { error: err(e2) }; }
+          }
+          return { error: err(e) };
+        }
       }
     },
     storage: { from: (bucket: string) => ({
