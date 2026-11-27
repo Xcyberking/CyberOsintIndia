@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { adminDb, verifyBearer } from "@/lib/firebase/admin";
+import { adminAuth, adminDb, verifyBearer } from "@/lib/firebase/admin";
 import type { DocumentReference } from "firebase-admin/firestore";
 export const runtime = "nodejs";
 
@@ -15,7 +15,21 @@ export async function POST(request: Request) {
     const profileRef = db.collection("profiles").doc(decoded.uid);
     const profileSnap = await profileRef.get();
     if (!profileSnap.exists) return NextResponse.json({error:"Profile not found."},{status:404});
-    if (profileSnap.data()?.signup_processed === true) return NextResponse.json({ok:true,alreadyProcessed:true});
+
+    // Promote only explicitly allowlisted, email-verified accounts. Never trust a client-supplied role.
+    const adminEmails = (process.env.FIREBASE_ADMIN_EMAILS || "")
+      .split(",").map(value => value.trim().toLowerCase()).filter(Boolean);
+    const accountEmail = String(decoded.email || "").trim().toLowerCase();
+    if (accountEmail && adminEmails.includes(accountEmail)) {
+      const auth = adminAuth();
+      const user = await auth.getUser(decoded.uid);
+      await auth.setCustomUserClaims(decoded.uid, { ...(user.customClaims || {}), admin: true });
+      await profileRef.set({ role: "admin", status: "active", updated_at: new Date().toISOString() }, { merge: true });
+    }
+
+    if (profileSnap.data()?.signup_processed === true) {
+      return NextResponse.json({ ok: true, alreadyProcessed: true, admin: Boolean(accountEmail && adminEmails.includes(accountEmail)) });
+    }
     const settings = await Promise.all([
       db.collection("site_settings").doc("default_signup_credits").get(),
       db.collection("site_settings").doc("referral_new_user_credits").get(),
