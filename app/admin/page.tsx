@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/firebase/compat";
-type AuthUser = { id: string; email?: string | null; email_confirmed_at?: string | null };
+type AuthUser = { id: string; email?: string | null; email_confirmed_at?: string | null; getIdTokenResult?: () => Promise<{claims:Record<string,unknown>}> };
 import {
   Activity, ArrowDownToLine, ArrowLeft, ArrowRight, Bell, BookOpen, CheckCircle2,
   ChevronRight, CircleHelp, Code2, Coins, CreditCard, Database, FileClock,
@@ -107,8 +107,9 @@ export default function AdminPage() {
         const verifiedEmailMatch=Boolean(user.email_confirmed_at && user.email &&
           profile?.email?.toLowerCase()===user.email.toLowerCase());
         const sameAuthUser=profile?.id===user.id;
+        const tokenResult=await user.getIdTokenResult?.();
         const allowed=(sameAuthUser || verifiedEmailMatch) &&
-          profile?.role==="admin" && profile?.status==="active";
+          profile?.role==="admin" && profile?.status==="active" && tokenResult?.claims.admin===true;
         setIsAdmin(allowed);
         if(!allowed) setMessage("Signed in as "+(user.email||"an account")+", but this Auth identity is not linked to an active admin profile. Sign in with the email/password account or link its OAuth identity in Firebase.");
         else setMessage("");
