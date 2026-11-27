@@ -33,7 +33,7 @@ async function applySignupRewards(user: any) {
 }
 const authUser = (user: any) => user ? ({
   id: user.uid, uid: user.uid, email: user.email, email_confirmed_at: user.emailVerified ? new Date().toISOString() : null,
-  user_metadata: { name: user.displayName || "" }, getIdToken: () => user.getIdToken()
+  user_metadata: { name: user.displayName || "" }, getIdToken: () => user.getIdToken(), getIdTokenResult: () => user.getIdTokenResult()
 }) : null;
 
 class QueryBuilder {
