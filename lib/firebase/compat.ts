@@ -29,7 +29,8 @@ async function ensureProfile(user: any) {
 async function applySignupRewards(user: any) {
   if (!user) return;
   const token = await user.getIdToken();
-  await fetch("/api/firebase/signup", { method: "POST", headers: { Authorization: "Bearer " + token } });
+  const response = await fetch("/api/firebase/signup", { method: "POST", headers: { Authorization: "Bearer " + token } });
+  if (response.ok) await user.getIdToken(true); // Refresh custom admin claims assigned by the server.
 }
 const authUser = (user: any) => user ? ({
   id: user.uid, uid: user.uid, email: user.email, email_confirmed_at: user.emailVerified ? new Date().toISOString() : null,
