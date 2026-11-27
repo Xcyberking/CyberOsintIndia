@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { createClient } from "@supabase/supabase-js";
+import { createClient } from "@/lib/firebase/compat";
 import {
   Activity, ArrowLeft, ArrowRight, Bell, CheckCircle2, ChevronRight, Clock3, CircleHelp, CreditCard,
   Compass, Crown, Database, Globe2, History, Home, KeyRound, LayoutGrid,
@@ -25,9 +25,7 @@ const tools: ToolInfo[] = [
 ];
 type HistoryItem = { title: string; query: string; date: string };
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-const supabase = supabaseUrl && supabaseKey ? createClient(supabaseUrl, supabaseKey) : null;
+const supabase = createClient();
 
 export default function HomePage() {
   const [page, setPage] = useState("Splash");
@@ -174,7 +172,7 @@ export default function HomePage() {
       let creditsHandledByProxy=false;
       // Run administrator-defined APIs on the server so browser CORS does not block results.
       if(configuredTool && configuredApi){
-        if(!supabase)throw new Error("Authentication service is unavailable.");
+        if(!supabase)throw new Error("Firebase Authentication is unavailable.");
         const {data:proxyResult,error:proxyError}=await supabase.functions.invoke("run-custom-tool",{body:{slug:tool,query:query.trim()}});
         if(proxyError||proxyResult?.error)throw new Error(proxyError?.message||proxyResult.error);
         data=proxyResult.result;
@@ -302,7 +300,7 @@ export default function HomePage() {
       return;
     }
     if (!supabase) {
-      setAuthMessage("Supabase is not configured. Check NEXT_PUBLIC_SUPABASE_URL and the public publishable key in hosting settings.");
+      setAuthMessage("Firebase is not configured. Add the NEXT_PUBLIC_FIREBASE_* settings in hosting.");
       return;
     }
 
@@ -522,8 +520,8 @@ export default function HomePage() {
       {authMessage && <p className={authMessage.startsWith("Account created") ? "notice" : "error"} role="status">{authMessage}</p>}
       <div className="auth-switch">{authMode === "login" ? "Don't have an account?" : "Already registered?"} <button onClick={()=>{setAuthMode(authMode==="login"?"register":"login");setAuthMessage("");setConfirmPassword("");}}>{authMode==="login"?"Register":"Login"}</button></div>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:9,marginTop:16}}>
-        <button className="secondary-btn" onClick={async()=>{if(!supabase){setAuthMessage("Supabase is not configured.");return;}const {error}=await supabase.auth.signInWithOAuth({provider:"google",options:{redirectTo:window.location.origin+"/auth/callback?next=%2F",scopes:"openid email profile"}});if(error)setAuthMessage(error.message);}}><Chrome size={15} style={{verticalAlign:"middle",marginRight:6}}/>Google</button>
-        <button className="secondary-btn" onClick={async()=>{if(!supabase){setAuthMessage("Supabase is not configured.");return;}const {error}=await supabase.auth.signInWithOAuth({provider:"github",options:{redirectTo:window.location.origin+"/auth/callback?next=%2F",scopes:"read:user user:email"}});if(error)setAuthMessage(error.message);}}><Github size={15} style={{verticalAlign:"middle",marginRight:6}}/>GitHub</button>
+        <button className="secondary-btn" onClick={async()=>{if(!supabase){setAuthMessage("Firebase is not configured.");return;}const {error}=await supabase.auth.signInWithOAuth({provider:"google",options:{redirectTo:window.location.origin+"/auth/callback?next=%2F",scopes:"openid email profile"}});if(error)setAuthMessage(error.message);}}><Chrome size={15} style={{verticalAlign:"middle",marginRight:6}}/>Google</button>
+        <button className="secondary-btn" onClick={async()=>{if(!supabase){setAuthMessage("Firebase is not configured.");return;}const {error}=await supabase.auth.signInWithOAuth({provider:"github",options:{redirectTo:window.location.origin+"/auth/callback?next=%2F",scopes:"read:user user:email"}});if(error)setAuthMessage(error.message);}}><Github size={15} style={{verticalAlign:"middle",marginRight:6}}/>GitHub</button>
       </div>
       <div className="notice">Google and GitHub buttons require their providers to be enabled in Supabase Auth. Never share your password or verification codes.</div>
       <button className="secondary-btn" style={{width:"100%",marginTop:14}} onClick={()=>setPage("Home")}>Back to home</button>
