@@ -99,7 +99,10 @@ export function createClient(_url?: string, _key?: string) {
       getUser: async () => ({ data: { user: authUser(firebaseAuth?.currentUser) }, error: null }),
       getSession: async () => ({ data: { session: firebaseAuth?.currentUser ? { user: authUser(firebaseAuth.currentUser) } : null }, error: null }),
       onAuthStateChange: (_cb: any) => {
-        const unsubscribe = firebaseAuth ? onAuthStateChanged(firebaseAuth, user => _cb(user ? "SIGNED_IN" : "SIGNED_OUT", user ? { user: authUser(user) } : null)) : () => {};
+        const unsubscribe = firebaseAuth ? onAuthStateChanged(firebaseAuth, user => {
+          if (!user || !user.emailVerified) { _cb("SIGNED_OUT", null); return; }
+          void ensureProfile(user).then(() => applySignupRewards(user)).catch(() => {}).finally(() => _cb("SIGNED_IN", { user: authUser(user) }));
+        }) : () => {};
         return { data: { subscription: { unsubscribe } } };
       },
       signOut: async () => { try { if (firebaseAuth) await signOut(firebaseAuth); return { error: null }; } catch (e) { return { error: err(e) }; } },
