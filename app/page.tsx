@@ -279,8 +279,8 @@ export default function HomePage() {
     if (authBusy) return;
     setAuthMessage("");
     const normalizedEmail = email.trim().toLowerCase();
-    if (!normalizedEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
-      setAuthMessage("Enter a valid email address.");
+    if (!normalizedEmail || !/^[^\s@]+@[^\s@]+$/.test(normalizedEmail)) {
+      setAuthMessage("Enter an email address with a username and @domain.");
       return;
     }
     if (!password) {
