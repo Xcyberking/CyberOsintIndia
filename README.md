@@ -8,7 +8,7 @@ Android-first public-source research workspace built with Next.js 15, React 19 a
 3. Create **Cloud Firestore** in production mode and **Firebase Storage**.
 4. Copy the web app config into the `NEXT_PUBLIC_FIREBASE_*` variables from `.env.example`.
 5. Create a Firebase service account in Project settings → Service accounts. Store its full JSON privately as `FIREBASE_SERVICE_ACCOUNT_JSON` in your server hosting environment. Never use a `NEXT_PUBLIC_` prefix for it and never commit it.
-6. Deploy Firestore and Storage rules from `firestore.rules` and `storage.rules` (Firebase CLI: `firebase deploy --only firestore:rules,storage`).
+6. Deploy Firestore and Storage rules from `firestore.rules` and `storage.rules` (Firebase CLI: `firebase deploy --only firestore:rules,firestore:indexes,storage`).
 7. Install dependencies with `npm install`, then run `npm run dev`.
 8. Set `FIREBASE_SERVICE_ACCOUNT_JSON` locally and run `npm run seed` to add the initial nine tools and default settings.
 9. Register your owner account in the app. Set `ADMIN_EMAIL` to that account's email, then run `npm run set-admin`. The script assigns the Firebase custom admin claim and admin profile. Sign out and sign in again to refresh the token.
