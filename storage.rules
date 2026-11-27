@@ -9,6 +9,12 @@ service firebase.storage {
         && request.resource.size < 5 * 1024 * 1024
         && request.resource.contentType.matches('image/(jpeg|png|webp)');
     }
+    match /cyberx-site-media/{allPaths=**} {
+      allow read: if signedIn();
+      allow write: if admin()
+        && request.resource.size < 2 * 1024 * 1024
+        && request.resource.contentType.matches('image/(jpeg|png|webp)');
+    }
     match /cyberx-user-media/{uid}/{fileName} {
       allow read: if admin() || (signedIn() && request.auth.uid == uid);
       allow write: if signedIn() && request.auth.uid == uid
