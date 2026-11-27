@@ -6,10 +6,65 @@ const json = (data: unknown, status = 200) => NextResponse.json(data, { status }
 export async function POST(request: Request) {
   try {
     const { name, args = {} } = await request.json();
-    const decoded = name === "consume_tool_wallet" || name === "create_wallet_deposit_request"
+    const decoded = name === "consume_tool_wallet" || name === "create_wallet_deposit_request" || name === "redeem_code"
       ? await verifyBearer(request) : await requireAdmin(request);
     const db = adminDb();
     const uid = decoded.uid;
+    if (name === "admin_create_redeem_code") {
+      const code = String(args.p_code || "").trim().toUpperCase();
+      const credits = Number(args.p_credits);
+      const maxUses = Number(args.p_max_uses);
+      if (!/^[A-Z0-9-]{4,32}$/.test(code)) return json({ error: "Code must be 4–32 characters using A–Z, 0–9 or hyphens." }, 400);
+      if (!Number.isSafeInteger(credits) || credits < 1 || credits > 1000000) return json({ error: "Credits must be a whole number from 1 to 1,000,000." }, 400);
+      if (!Number.isSafeInteger(maxUses) || maxUses < 1 || maxUses > 100000) return json({ error: "Maximum users must be a whole number from 1 to 100,000." }, 400);
+      const ref = db.collection("redeem_codes").doc(code);
+      await db.runTransaction(async tx => {
+        const existing = await tx.get(ref);
+        if (existing.exists) throw new Error("That redeem code already exists.");
+        const now = new Date().toISOString();
+        tx.create(ref, { id: code, code, credits, max_uses: maxUses, used_count: 0, active: true, created_by: uid, created_at: now, updated_at: now });
+      });
+      return json({ data: { code, credits, max_uses: maxUses, used_count: 0, active: true } });
+    }
+    if (name === "admin_deactivate_redeem_code") {
+      const code = String(args.p_code || "").trim().toUpperCase();
+      if (!/^[A-Z0-9-]{4,32}$/.test(code)) return json({ error: "Invalid redeem code." }, 400);
+      const ref = db.collection("redeem_codes").doc(code);
+      const snap = await ref.get();
+      if (!snap.exists) return json({ error: "Redeem code not found." }, 404);
+      await ref.update({ active: false, updated_at: new Date().toISOString() });
+      return json({ data: true });
+    }
+    if (name === "redeem_code") {
+      const code = String(args.p_code || "").trim().toUpperCase();
+      if (!/^[A-Z0-9-]{4,32}$/.test(code)) return json({ error: "Enter a valid redeem code." }, 400);
+      const codeRef = db.collection("redeem_codes").doc(code);
+      const profileRef = db.collection("profiles").doc(uid);
+      const redemptionRef = codeRef.collection("redemptions").doc(uid);
+      let result: { credits: number; balance: number; used_count: number; max_uses: number } | null = null;
+      await db.runTransaction(async tx => {
+        const [codeSnap, profileSnap, redemptionSnap] = await Promise.all([tx.get(codeRef), tx.get(profileRef), tx.get(redemptionRef)]);
+        if (!codeSnap.exists || codeSnap.data()?.active !== true) throw new Error("This redeem code is invalid or inactive.");
+        if (!profileSnap.exists || profileSnap.data()?.status !== "active") throw new Error("Your account is not active.");
+        if (redemptionSnap.exists) throw new Error("You have already used this redeem code.");
+        const codeData = codeSnap.data()!;
+        const used = Number(codeData.used_count || 0);
+        const max = Number(codeData.max_uses || 0);
+        const reward = Number(codeData.credits || 0);
+        if (!Number.isSafeInteger(used) || !Number.isSafeInteger(max) || !Number.isSafeInteger(reward) || max < 1 || reward < 1) throw new Error("Redeem code configuration is invalid.");
+        if (used >= max) throw new Error("This redeem code has reached its maximum number of users.");
+        const balance = Number(profileSnap.data()?.credits || 0) + reward;
+        if (!Number.isSafeInteger(balance) || balance < 0 || balance > 2147483647) throw new Error("Credit balance limit reached.");
+        const now = new Date().toISOString();
+        tx.update(profileRef, { credits: balance, updated_at: now });
+        tx.update(codeRef, { used_count: used + 1, active: used + 1 < max, updated_at: now });
+        tx.create(redemptionRef, { user_id: uid, code, credits: reward, redeemed_at: now });
+        const ledgerRef = db.collection("credit_transactions").doc();
+        tx.create(ledgerRef, { user_id: uid, delta: reward, reason: "Redeem code: " + code, created_at: now });
+        result = { credits: reward, balance, used_count: used + 1, max_uses: max };
+      });
+      return json({ data: result });
+    }
     if (name === "create_wallet_deposit_request") {
       const amount = Number(args.p_amount_inr);
       const utr = String(args.p_utr || "").trim();
