@@ -107,7 +107,7 @@ export default function HomePage() {
   }
 
   useEffect(() => {
-    if (!backend) return;
+    if (!backend) { setAuthMessage("Firebase is not configured. Add the six NEXT_PUBLIC_FIREBASE_* values in your hosting settings."); setPage("Login"); return; }
     let active = true;
     void Promise.all([
       backend.from("tools").select("slug,name,description,category,enabled,handler,credit_cost,price_inr,input_label,result_note,config").eq("enabled",true),
