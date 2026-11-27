@@ -94,7 +94,7 @@ export default function HomePage() {
     setProfileBio(profile?.bio || ""); setUsername(profile?.username||""); if(profile?.avatar_url){const {data:av}=await backend.storage.from("cyberx-avatars").createSignedUrl(profile.avatar_url,3600);setAvatarUrl(av?.signedUrl||"");}else setAvatarUrl(""); setCredits(profile?.credits||0); setWalletBalance(Number(profile?.wallet_balance||0)); setRole(profile?.role||"user"); setPlanName(profile?.plan_name||"Free"); setPlanExpires(profile?.plan_expires_at||""); setReferralCode(profile?.referral_code||"");
     const { data } = await backend.from("search_history").select("tool_slug,input_summary,created_at")
       .eq("user_id", user.id).order("created_at", { ascending: false }).limit(30);
-    if (data) setHistory(data.map((item) => ({
+    if (data) setHistory(data.map((item: {tool_slug:string;input_summary:string;created_at:string}) => ({
       title: tools.find((entry) => entry.key === item.tool_slug || toolSlug[entry.key]===item.tool_slug)?.title || dbTools.find(entry=>entry.slug===item.tool_slug)?.name || item.tool_slug,
       query: item.input_summary,
       date: new Date(item.created_at).toLocaleString()
@@ -103,7 +103,7 @@ export default function HomePage() {
       backend.from("referral_claims").select("id,reward,status").eq("referrer_id",user.id),
       backend.from("credit_transactions").select("delta").eq("user_id",user.id).ilike("reason","%Referral reward%")
     ]);
-    setReferralCount(claims?.length||0); setReferralCredits((transactions||[]).reduce((sum,row)=>sum+(row.delta||0),0));
+    setReferralCount(claims?.length||0); setReferralCredits((transactions||[]).reduce((sum:number,row:{delta?:number})=>sum+(row.delta||0),0));
   }
 
   useEffect(() => {
@@ -115,20 +115,20 @@ export default function HomePage() {
       backend.from("site_settings").select("key,value").in("key",["payment_qr_url","payment_instructions","default_signup_credits","referral_new_user_credits","referral_reward"])
     ]).then(([t,p,s])=>{
       if(!active)return;
-      if(t.data){setDbTools(t.data as typeof dbTools);setEnabledToolSlugs(t.data.filter(row=>row.enabled).map(row=>row.slug));}
+      if(t.data){const toolRows=t.data as typeof dbTools;setDbTools(toolRows);setEnabledToolSlugs(toolRows.filter((row)=>row.enabled).map((row)=>row.slug));}
       if(p.data)setPlans(p.data as typeof plans);
-      const settings=Object.fromEntries((s.data||[]).map(row=>[row.key,row.value]));
+      const settings=Object.fromEntries((s.data||[]).map((row:{key:string;value:unknown})=>[row.key,row.value]));
       setPaymentQr(String(settings.payment_qr_url||"").replace(/^"|"$/g,""));
       setPaymentInstructions(String(settings.payment_instructions||"").replace(/^"|"$/g,""));
       const rewardCredits=(value:unknown,fallback:number)=>{const raw=value&&typeof value==="object"?(value as {credits?:unknown}).credits:value;const n=Number(raw);return Number.isSafeInteger(n)&&n>=0?n:fallback;};
       setReferralRewards({signup:rewardCredits(settings.default_signup_credits,3),referred:rewardCredits(settings.referral_new_user_credits,7),referrer:rewardCredits(settings.referral_reward,3)});
     });
-    void backend.auth.getSession().then(({ data }) => {
+    void backend.auth.getSession().then(({ data }: {data:{session:{user:any}|null}}) => {
       if(!active)return;
       if(data.session?.user){void hydrateUser(data.session.user);setPage("Home");}
       else setPage("Login");
     });
-    const { data: { subscription } } = backend.auth.onAuthStateChange((_event, session) => {
+    const { data: { subscription } } = backend.auth.onAuthStateChange((_event: string, session: {user:any}|null) => {
       if (!active) return;
       if (!session) { setUserEmail(""); setUserId(""); setProfileName(""); setProfileBio(""); setHistory([]); }
       else { setUserEmail(session.user.email || ""); Promise.resolve().then(() => void hydrateUser(session.user)); }
@@ -147,7 +147,7 @@ export default function HomePage() {
         schema: "public",
         table: "profiles",
         filter: "id=eq." + userId
-      }, (payload) => {
+      }, (payload: {new:Record<string,unknown>}) => {
         const nextCredits = Number((payload.new as { credits?: unknown }).credits);
         const nextWallet = Number((payload.new as { wallet_balance?: unknown }).wallet_balance);
         if (Number.isSafeInteger(nextCredits) && nextCredits >= 0) setCredits(nextCredits);
