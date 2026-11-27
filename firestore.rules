@@ -7,13 +7,14 @@ service cloud.firestore {
       allow read: if signedIn() && (request.auth.uid == uid || admin());
       allow create: if signedIn() && request.auth.uid == uid
         && request.resource.data.role == 'user'
+        && request.resource.data.status == 'active'
         && request.resource.data.wallet_balance == 0
-        && request.resource.data.credits == 0;
+        && request.resource.data.credits == 0
+        && request.resource.data.referral_code == request.auth.uid
+        && request.resource.data.signup_processed == false;
       allow update: if admin() || (signedIn() && request.auth.uid == uid
-        && request.resource.data.role == resource.data.role
-        && request.resource.data.status == resource.data.status
-        && request.resource.data.credits == resource.data.credits
-        && request.resource.data.wallet_balance == resource.data.wallet_balance);
+        && request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['display_name','username','bio','avatar_url','updated_at']));
       allow delete: if admin();
     }
     match /tools/{id} { allow read: if signedIn() && (admin() || resource.data.enabled == true); allow write: if admin(); }
