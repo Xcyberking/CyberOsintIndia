@@ -130,8 +130,8 @@ export default function HomePage() {
     });
     const { data: { subscription } } = backend.auth.onAuthStateChange((_event: string, session: {user:any}|null) => {
       if (!active) return;
-      if (!session) { setUserEmail(""); setUserId(""); setProfileName(""); setProfileBio(""); setHistory([]); }
-      else { setUserEmail(session.user.email || ""); Promise.resolve().then(() => void hydrateUser(session.user)); }
+      if (!session) { setUserEmail(""); setUserId(""); setProfileName(""); setProfileBio(""); setHistory([]); setPage("Login"); }
+      else { setUserEmail(session.user.email || ""); setPage("Home"); Promise.resolve().then(() => void hydrateUser(session.user)); }
     });
     return () => { active = false; subscription.unsubscribe(); };
   }, []);
@@ -520,8 +520,8 @@ export default function HomePage() {
       {authMessage && <p className={authMessage.startsWith("Account created") ? "notice" : "error"} role="status">{authMessage}</p>}
       <div className="auth-switch">{authMode === "login" ? "Don't have an account?" : "Already registered?"} <button onClick={()=>{setAuthMode(authMode==="login"?"register":"login");setAuthMessage("");setConfirmPassword("");}}>{authMode==="login"?"Register":"Login"}</button></div>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:9,marginTop:16}}>
-        <button className="secondary-btn" onClick={async()=>{if(!backend){setAuthMessage("Firebase is not configured.");return;}const {error}=await backend.auth.signInWithOAuth({provider:"google",options:{redirectTo:window.location.origin+"/auth/callback?next=%2F",scopes:"openid email profile"}});if(error)setAuthMessage(error.message);}}><Chrome size={15} style={{verticalAlign:"middle",marginRight:6}}/>Google</button>
-        <button className="secondary-btn" onClick={async()=>{if(!backend){setAuthMessage("Firebase is not configured.");return;}const {error}=await backend.auth.signInWithOAuth({provider:"github",options:{redirectTo:window.location.origin+"/auth/callback?next=%2F",scopes:"read:user user:email"}});if(error)setAuthMessage(error.message);}}><Github size={15} style={{verticalAlign:"middle",marginRight:6}}/>GitHub</button>
+        <button className="secondary-btn" disabled={authBusy} onClick={async()=>{if(!backend){setAuthMessage("Firebase is not configured.");return;}setAuthBusy(true);setAuthMessage("");try{const {error}=await backend.auth.signInWithOAuth({provider:"google"});if(error)throw new Error(error.message);const {data:{user}}=await backend.auth.getUser();if(!user)throw new Error("Google sign-in completed, but Firebase did not return an active session. Please try again.");await hydrateUser(user);setPage("Home");setAuthMessage("");}catch(e){setAuthMessage(e instanceof Error?e.message:"Google sign-in failed.");}finally{setAuthBusy(false);}}}><Chrome size={15} style={{verticalAlign:"middle",marginRight:6}}/>Google</button>
+        <button className="secondary-btn" disabled={authBusy} onClick={async()=>{if(!backend){setAuthMessage("Firebase is not configured.");return;}setAuthBusy(true);setAuthMessage("");try{const {error}=await backend.auth.signInWithOAuth({provider:"github"});if(error)throw new Error(error.message);const {data:{user}}=await backend.auth.getUser();if(!user)throw new Error("GitHub sign-in completed, but Firebase did not return an active session. Please try again.");await hydrateUser(user);setPage("Home");setAuthMessage("");}catch(e){setAuthMessage(e instanceof Error?e.message:"GitHub sign-in failed.");}finally{setAuthBusy(false);}}}><Github size={15} style={{verticalAlign:"middle",marginRight:6}}/>GitHub</button>
       </div>
       <div className="notice">Google and GitHub buttons require their providers to be enabled in Firebase Authentication. Never share your password or verification codes.</div>
       <button className="secondary-btn" style={{width:"100%",marginTop:14}} onClick={()=>setPage("Home")}>Back to home</button>
