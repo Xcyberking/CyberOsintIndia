@@ -99,7 +99,13 @@ export function createClient(_url?: string, _key?: string) {
       },
       signOut: async () => { try { if (firebaseAuth) await signOut(firebaseAuth); return { error: null }; } catch (e) { return { error: err(e) }; } },
       signInWithPassword: async ({ email, password }: any) => {
-        try { if (!firebaseAuth) throw new Error("Firebase is not configured."); const c = await signInWithEmailAndPassword(firebaseAuth, email, password); await ensureProfile(c.user); return { data: { user: authUser(c.user), session: { user: authUser(c.user) } }, error: null }; } catch (e) { return { data: {}, error: err(e) }; }
+        try {
+          if (!firebaseAuth) throw new Error("Firebase is not configured.");
+          const c = await signInWithEmailAndPassword(firebaseAuth, email, password);
+          if (!c.user.emailVerified) { await signOut(firebaseAuth); throw new Error("Email not confirmed. Verify the email sent by Firebase before logging in."); }
+          await ensureProfile(c.user);
+          return { data: { user: authUser(c.user), session: { user: authUser(c.user) } }, error: null };
+        } catch (e) { return { data: {}, error: err(e) }; }
       },
       signUp: async ({ email, password, options }: any) => {
         try {
@@ -109,10 +115,11 @@ export function createClient(_url?: string, _key?: string) {
           if (name) await updateProfile(c.user, { displayName: name });
           await setDoc(doc(firestore, "profiles", c.user.uid), { id: c.user.uid, email, display_name: name, bio: "", username: "", avatar_url: "", credits: 0, wallet_balance: 0, role: "user", status: "active", plan_name: "Free", plan_expires_at: null, referral_code: c.user.uid.slice(0, 8).toUpperCase(), created_at: new Date().toISOString(), updated_at: new Date().toISOString() });
           try { await sendEmailVerification(c.user); } catch {}
-          return { data: { user: authUser(c.user), session: { user: authUser(c.user) } }, error: null };
+          await signOut(firebaseAuth);
+          return { data: { user: authUser(c.user), session: null }, error: null };
         } catch (e) { return { data: {}, error: err(e) }; }
       },
-      resetPasswordForEmail: async (email: string) => { try { if (!firebaseAuth) throw new Error("Firebase is not configured."); await sendPasswordResetEmail(firebaseAuth, email); return { error: null }; } catch (e) { return { error: err(e) }; } },
+      resetPasswordForEmail: async (email: string, _options?: any) => { try { if (!firebaseAuth) throw new Error("Firebase is not configured."); await sendPasswordResetEmail(firebaseAuth, email); return { error: null }; } catch (e) { return { error: err(e) }; } },
       signInWithOAuth: async ({ provider }: any) => {
         try { if (!firebaseAuth) throw new Error("Firebase is not configured."); const p = provider === "github" ? new GithubAuthProvider() : new GoogleAuthProvider(); const result = await signInWithPopup(firebaseAuth, p); await ensureProfile(result.user); return { error: null }; } catch (e) { return { error: err(e) }; }
       }
