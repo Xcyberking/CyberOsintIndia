@@ -6,9 +6,14 @@ import { getFirestore } from "firebase-admin/firestore";
 function getAdminApp() {
   if (getApps().length) return getApps()[0];
   const raw = process.env.FIREBASE_SERVICE_ACCOUNT_JSON;
-  if (!raw) throw new Error("Missing FIREBASE_SERVICE_ACCOUNT_JSON server environment variable.");
-  const serviceAccount = JSON.parse(raw);
-  return initializeApp({ credential: cert(serviceAccount), projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID || serviceAccount.project_id });
+  if (!raw) throw new Error("Missing FIREBASE_SERVICE_ACCOUNT_JSON. Add it as a server-only Vercel environment variable.");
+  let serviceAccount: { project_id?: string; client_email?: string; private_key?: string };
+  try { serviceAccount = JSON.parse(raw); }
+  catch { throw new Error("FIREBASE_SERVICE_ACCOUNT_JSON must contain the complete service-account JSON."); }
+  const projectId = process.env.FIREBASE_PROJECT_ID || serviceAccount.project_id;
+  if (!projectId || !serviceAccount.client_email || !serviceAccount.private_key) throw new Error("Firebase Admin credentials are incomplete. Download a new service-account JSON.");
+  if (serviceAccount.project_id && projectId !== serviceAccount.project_id) throw new Error("FIREBASE_PROJECT_ID does not match the service-account project_id.");
+  return initializeApp({ credential: cert({ ...serviceAccount, projectId }), projectId });
 }
 export function adminAuth() { return getAuth(getAdminApp()); }
 export function adminDb() { return getFirestore(getAdminApp()); }
