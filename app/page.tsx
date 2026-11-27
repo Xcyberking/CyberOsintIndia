@@ -413,7 +413,7 @@ export default function HomePage() {
   async function submitWalletDeposit(){
     if(!supabase){setStoreMessage("Payment service is unavailable.");return;}
     const amount=Number(depositAmount);
-    if(!Number.isFinite(amount)||amount<10||amount>50000||Math.round(amount*100)!==amount*100){setStoreMessage("Enter an amount from ₹10 to ₹50,000 (up to 2 decimal places).");return;}
+    if(!Number.isFinite(amount)||amount<10||amount>50000||Math.abs(Math.round(amount*100)-amount*100)>0.000001){setStoreMessage("Enter an amount from ₹10 to ₹50,000 (up to 2 decimal places).");return;}
     const utr=paymentReference.trim();
     if(utr.length<6||utr.length>80){setStoreMessage("Enter a valid UTR / transaction reference (6–80 characters).");return;}
     setSavingPayment(true);setStoreMessage("");
