@@ -67,6 +67,7 @@ export default function HomePage() {
   const [selectedPlan,setSelectedPlan]=useState(""); const [paymentReference,setPaymentReference]=useState(""); const [paymentProof,setPaymentProof]=useState<File|null>(null);
   const [storeMessage,setStoreMessage]=useState(""); const [savingPayment,setSavingPayment]=useState(false); const [role,setRole]=useState("user");
   const [myPayments,setMyPayments]=useState<{id:string;provider_reference:string|null;amount_inr:number;status:string;created_at:string;admin_note:string|null;user_note:string|null;payment_type?:string}[]>([]);
+  const [walletTransactions,setWalletTransactions]=useState<{id:string;amount_inr:number;balance_after:number;transaction_type:string;description:string;created_at:string}[]>([]);
   const [supportTickets,setSupportTickets]=useState<{id:string;subject:string;message:string;status:string;admin_reply:string|null;created_at:string;updated_at:string}[]>([]);
   const [supportSubject,setSupportSubject]=useState(""); const [supportMessage,setSupportMessage]=useState("");
   const [supportNotice,setSupportNotice]=useState(""); const [supportBusy,setSupportBusy]=useState(false);
@@ -461,6 +462,8 @@ export default function HomePage() {
     const {data:{user}}=await supabase.auth.getUser();if(!user)return;
     const {data}=await supabase.from("payment_records").select("id,provider_reference,amount_inr,status,created_at,admin_note,user_note,payment_type").eq("user_id",user.id).order("created_at",{ascending:false}).limit(20);
     setMyPayments((data||[]) as typeof myPayments);
+    const {data:ledger}=await supabase.from("wallet_transactions").select("id,amount_inr,balance_after,transaction_type,description,created_at").eq("user_id",user.id).order("created_at",{ascending:false}).limit(30);
+    setWalletTransactions((ledger||[]) as typeof walletTransactions);
   }
 
   async function loadSupportTickets(){
@@ -624,6 +627,8 @@ export default function HomePage() {
         {storeMessage&&<p className={storeMessage.includes("submitted")?"notice":"error"}>{storeMessage}</p>}
         <div className="section-head"><h3>My deposit requests</h3><button className="text-link" onClick={()=>void loadMyPayments()}>Refresh</button></div>
         {myPayments.length?<div className="tool-list">{myPayments.map(item=><div className="tool-row" key={item.id}><div className="tool-icon"><CreditCard size={18}/></div><span><strong>₹{Number(item.amount_inr).toFixed(2)} · {item.status==="pending"?"Awaiting review":item.status==="success"?"Approved":"Rejected"}</strong><small>{item.payment_type==="wallet"?"Wallet deposit":"Plan payment"} · UTR: {item.provider_reference||"—"} · {new Date(item.created_at).toLocaleString()}</small>{item.admin_note&&<small>Admin note: {item.admin_note}</small>}</span></div>)}</div>:<div className="empty">No deposit requests submitted yet.</div>}
+        <div className="section-head"><h3>Wallet transaction history</h3><span className="notice">Latest 30</span></div>
+        {walletTransactions.length?<div className="tool-list">{walletTransactions.map(item=><div className="tool-row" key={item.id}><div className="tool-icon"><Coins size={18}/></div><span><strong>{item.amount_inr>=0?"+":"−"}₹{Math.abs(Number(item.amount_inr)).toFixed(2)} · {item.transaction_type.replace("_"," ")}</strong><small>{item.description} · Balance ₹{Number(item.balance_after).toFixed(2)} · {new Date(item.created_at).toLocaleString()}</small></span></div>)}</div>:<div className="empty">Your wallet transactions will appear here.</div>}
         <p className="notice">Tool charges are deducted from this wallet only after a successful query. Each tool's INR price is controlled by the administrator.</p>
       </div>}
       {page === "Support" && <div className="content-panel" style={{maxWidth:"none"}}>
