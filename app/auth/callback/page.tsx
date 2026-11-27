@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { onAuthStateChanged } from "firebase/auth";
-import { doc, getDoc } from "firebase/firestore";
+import { doc, getDoc, setDoc } from "firebase/firestore";
 import { firebaseAuth, firestore } from "@/lib/firebase/client";
 
 export default function AuthCallbackPage() {
@@ -13,6 +13,19 @@ export default function AuthCallbackPage() {
     if (!auth || !db) { setMessage("Firebase is not configured. Contact the site administrator."); return; }
     const stop = onAuthStateChanged(auth, async user => {
       if (!user) { setMessage("No active sign-in was found. Return to the app and sign in again."); return; }
+      const profileRef = doc(db, "profiles", user.uid);
+      const existingProfile = await getDoc(profileRef);
+      if (!existingProfile.exists()) {
+        await setDoc(profileRef, {
+          id: user.uid, email: user.email || "", display_name: user.displayName || "",
+          bio: "", username: "", avatar_url: "", credits: 0, wallet_balance: 0,
+          role: "user", status: "active", plan_name: "Free", plan_expires_at: null,
+          referral_code: user.uid, signup_processed: false,
+          created_at: new Date().toISOString(), updated_at: new Date().toISOString()
+        });
+        const token = await user.getIdToken();
+        await fetch("/api/firebase/signup", { method: "POST", headers: { Authorization: "Bearer " + token } });
+      }
       const params = new URLSearchParams(window.location.search);
       const requested = params.get("next") || "/";
       const next = requested.startsWith("/") && !requested.startsWith("//") ? requested : "/";
