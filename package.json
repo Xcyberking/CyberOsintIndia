@@ -8,7 +8,8 @@
     "start": "next start",
     "lint": "tsc --noEmit",
     "set-admin": "node --env-file=.env.local scripts/set-admin.mjs",
-    "seed": "node --env-file=.env.local scripts/seed-firestore.mjs"
+    "seed": "node --env-file=.env.local scripts/seed-firestore.mjs",
+    "env:check": "node --env-file=.env.local scripts/check-firebase-env.mjs"
   },
   "dependencies": {
     "lucide-react": "0.468.0",
