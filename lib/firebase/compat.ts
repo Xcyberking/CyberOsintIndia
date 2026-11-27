@@ -130,7 +130,7 @@ export function createClient(_url?: string, _key?: string) {
       },
       resetPasswordForEmail: async (email: string, _options?: any) => { try { if (!firebaseAuth) throw new Error("Firebase is not configured."); await sendPasswordResetEmail(firebaseAuth, email); return { error: null }; } catch (e) { return { error: err(e) }; } },
       signInWithOAuth: async ({ provider }: any) => {
-        try { if (!firebaseAuth) throw new Error("Firebase is not configured."); const p = provider === "github" ? new GithubAuthProvider() : new GoogleAuthProvider(); const result = await signInWithPopup(firebaseAuth, p); await ensureProfile(result.user); await applySignupRewards(result.user); return { error: null }; } catch (e) { return { error: err(e) }; }
+        try { if (!firebaseAuth) throw new Error("Firebase is not configured."); const p = provider === "github" ? new GithubAuthProvider() : new GoogleAuthProvider(); const result = await signInWithPopup(firebaseAuth, p); await ensureProfile(result.user); await applySignupRewards(result.user); const user = authUser(result.user); return { data: { user, session: { user } }, error: null }; } catch (e) { return { error: err(e) }; }
       }
     },
     storage: { from: (bucket: string) => ({
