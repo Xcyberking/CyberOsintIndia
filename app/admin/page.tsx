@@ -13,7 +13,7 @@ import {
 import "./admin.css";
 
 type Row = Record<string, unknown>;
-type SectionKey = "dashboard"|"profile"|"users"|"banned"|"tools"|"plans"|"payments"|"credits"|"referrals"|"settings"|"appearance"|"announcements"|"api"|"backup"|"logs"|"developer"|"support"|"analytics"|"system"|"about";
+type SectionKey = "dashboard"|"profile"|"users"|"banned"|"tools"|"plans"|"payments"|"credits"|"redeem"|"referrals"|"settings"|"appearance"|"announcements"|"api"|"backup"|"logs"|"developer"|"support"|"analytics"|"system"|"about";
 type Section = { key: SectionKey; label: string; table?: string; description: string; icon: typeof Shield; };
 const sections: Section[] = [
   {key:"dashboard",label:"Dashboard",description:"Overview of your OSINT workspace",icon:LayoutDashboard},
@@ -24,22 +24,18 @@ const sections: Section[] = [
   {key:"plans",label:"Premium Plans",table:"premium_plans",description:"Manage plan names, prices, credits and duration",icon:Crown},
   {key:"payments",label:"Payments",table:"payment_records",description:"Review payment records and statuses",icon:CreditCard},
   {key:"credits",label:"Credits",table:"credit_transactions",description:"Audit credit grants and deductions",icon:Coins},
+  {key:"redeem",label:"Redeem Codes",table:"redeem_codes",description:"Create credit codes and control redemption limits",icon:Ticket},
   {key:"referrals",label:"Referral System",table:"referral_claims",description:"Review referral qualification and rewards",icon:Users},
   {key:"settings",label:"Site Settings",table:"site_settings",description:"Store public site configuration",icon:Settings},
-  {key:"appearance",label:"Appearance",table:"site_settings",description:"Manage theme and branding settings",icon:Palette},
   {key:"announcements",label:"Announcements",table:"announcements",description:"Publish service notices and updates",icon:Megaphone},
-  {key:"api",label:"API Management",table:"api_integrations",description:"Manage public API endpoint configuration",icon:Link2},
   {key:"backup",label:"Backup & Restore",description:"Database backup guidance and restore checklist",icon:Database},
-  {key:"logs",label:"Logs & Activity",table:"admin_audit_logs",description:"Review administrative actions",icon:FileClock},
-  {key:"developer",label:"Developer Hub",table:"developer_resources",description:"Manage documentation and developer resources",icon:Code2},
   {key:"support",label:"Support Center",table:"support_tickets",description:"Review user support requests",icon:Ticket},
   {key:"analytics",label:"Site Analytics",description:"Live counts from your configured database tables",icon:Activity},
-  {key:"system",label:"System Information",description:"Runtime and service configuration status",icon:Server},
   {key:"about",label:"About CyberX OSINT",description:"Project details and safety boundaries",icon:ShieldCheck}
 ];
 const tableByKey: Partial<Record<SectionKey,string>> = {
   users:"profiles",banned:"profiles",tools:"tools",plans:"premium_plans",payments:"payment_records",
-  credits:"profiles",referrals:"referral_claims",settings:"site_settings",appearance:"site_settings",
+  credits:"profiles",redeem:"redeem_codes",referrals:"referral_claims",settings:"site_settings",
   announcements:"announcements",api:"api_integrations",logs:"admin_audit_logs",developer:"developer_resources",support:"support_tickets"
 };
 const backend=createClient();
@@ -84,6 +80,8 @@ export default function AdminPage() {
   const [referralSettingsSaving,setReferralSettingsSaving]=useState(false);
   const [adminProfileDraft,setAdminProfileDraft]=useState({display_name:"",username:"",bio:""});
   const [adminProfileSaving,setAdminProfileSaving]=useState(false);
+  const [redeemDraft,setRedeemDraft]=useState({code:"",credits:"25",maxUses:"10"});
+  const [redeemSaving,setRedeemSaving]=useState(false);
 
   const verify=useCallback(async()=>{
     if(!backend){setChecking(false);return;}
@@ -231,6 +229,27 @@ export default function AdminPage() {
     setReferralSettingsSaving(false);
   }
 
+  async function createRedeemCode(){
+    if(!backend)return;
+    const code=redeemDraft.code.trim().toUpperCase();
+    const credits=Number(redeemDraft.credits);
+    const maxUses=Number(redeemDraft.maxUses);
+    if(!/^[A-Z0-9-]{4,32}$/.test(code)){setMessage("Code must be 4–32 characters using A–Z, 0–9 or hyphens.");return;}
+    if(!Number.isSafeInteger(credits)||credits<1||credits>1000000){setMessage("Credits must be a whole number from 1 to 1,000,000.");return;}
+    if(!Number.isSafeInteger(maxUses)||maxUses<1||maxUses>100000){setMessage("Maximum users must be a whole number from 1 to 100,000.");return;}
+    setRedeemSaving(true);setMessage("");
+    const {error}=await backend.rpc("admin_create_redeem_code",{p_code:code,p_credits:credits,p_max_uses:maxUses});
+    setMessage(error?error.message:"Redeem code created successfully.");
+    if(!error){setRedeemDraft({code:"",credits:"25",maxUses:"10"});await loadRows();}
+    setRedeemSaving(false);
+  }
+  async function deactivateRedeemCode(code:string){
+    if(!backend||!window.confirm("Deactivate redeem code "+code+"? Existing redemptions will remain in history."))return;
+    const {error}=await backend.rpc("admin_deactivate_redeem_code",{p_code:code});
+    setMessage(error?error.message:"Redeem code deactivated.");
+    if(!error)await loadRows();
+  }
+
   async function saveRecord(){
     if(!backend||!active.table)return;
     setSaving(true);setMessage("");
@@ -360,16 +379,19 @@ export default function AdminPage() {
   }
 
   async function uploadPaymentQr(file:File){
-    if(!backend)return;
-    if(!["image/png","image/jpeg","image/webp"].includes(file.type)||file.size>2*1024*1024){setGatewayMessage("QR must be PNG, JPG or WebP and no larger than 2 MB.");return;}
+    if(!backend||!authUser||!isAdmin){setGatewayMessage("Verified administrator access is required to upload site images.");return;}
+    if(!["image/png","image/jpeg","image/webp"].includes(file.type)||file.size>=2*1024*1024){setGatewayMessage("Choose a PNG, JPG or WebP image smaller than 2 MB.");return;}
     setQrUploading(true);setGatewayMessage("");
-    const path="payment-qr/"+Date.now()+"-"+file.name.replace(/[^a-zA-Z0-9._-]/g,"");
-    const {error:uploadError}=await backend.storage.from("cyberx-site-media").upload(path,file,{upsert:false,contentType:file.type});
-    if(uploadError){setGatewayMessage(uploadError.message);setQrUploading(false);return;}
+    const safeName=file.name.replace(/[^a-zA-Z0-9._-]/g,"").slice(-80)||"payment-qr.png";
+    const path="payment-qr/"+Date.now()+"-"+crypto.randomUUID()+"-"+safeName;
+    const {error:uploadError}=await backend.storage.from("cyberx-site-media").upload(path,file,{upsert:true,contentType:file.type});
+    if(uploadError){setGatewayMessage("Image upload failed: "+uploadError.message);setQrUploading(false);return;}
     const {data,error:urlError}=await backend.storage.from("cyberx-site-media").createSignedUrl(path,31536000);
-    if(urlError||!data?.signedUrl){setGatewayMessage(urlError?.message||"Could not create QR image URL.");setQrUploading(false);return;}
-    const {error}=await backend.from("site_settings").upsert({key:"payment_qr_url",value:data.signedUrl,updated_by:authUser?.id,updated_at:new Date().toISOString()},{onConflict:"key"});
-    setGatewayMessage(error?error.message:"Payment QR uploaded and published to the Store.");
+    if(urlError||!data?.signedUrl){setGatewayMessage("Image uploaded, but its download URL could not be created: "+(urlError?.message||"Unknown storage error."));setQrUploading(false);return;}
+    const {error:saveError}=await backend.from("site_settings").upsert({key:"payment_qr_url",value:data.signedUrl,updated_by:authUser.id,updated_at:new Date().toISOString()},{onConflict:"key"});
+    if(saveError){setGatewayMessage("Image uploaded, but saving the site setting failed: "+saveError.message);setQrUploading(false);return;}
+    setGatewayMessage("Payment QR image saved and published to the Store.");
+    await loadRows();
     setQrUploading(false);
   }
 
@@ -380,7 +402,7 @@ export default function AdminPage() {
     if(saved)setPaymentInstructionsDraft(String(saved.value??"").replace(/^"|"$/g,""));
   },[section,rows]);
   const recordCount=Object.values(counts).reduce((a,b)=>a+b,0);
-  const addable=["tools","plans","announcements","api","developer","settings","appearance"].includes(section);
+  const addable=["tools","plans","announcements","settings"].includes(section);
 
   if(checking)return <div className="admin-loading"><div className="admin-spinner"/>Checking admin access…</div>;
   if(!backend)return <div className="admin-auth"><div className="admin-auth-card"><div className="admin-logo"><Shield size={30}/></div><h1>Cyber<span>X</span> OSINT</h1><p>Admin panel configuration required</p><div className="admin-warning">Add NEXT_PUBLIC_FIREBASE_* settings in your hosting environment, then redeploy.</div><a href="https://github.com/Xcyberking/CyberOsintIndia" target="_blank" rel="noreferrer">Open project repository <ArrowRight size={15}/></a></div></div>;
@@ -389,13 +411,14 @@ export default function AdminPage() {
   const navGroups=[
     {title:"OVERVIEW",keys:["dashboard","analytics","system"] as SectionKey[]},
     {title:"ACCOUNT",keys:["profile"] as SectionKey[]},
-    {title:"MANAGEMENT",keys:["users","banned","tools","plans","payments","credits","referrals"] as SectionKey[]},
-    {title:"CONFIGURATION",keys:["settings","appearance","announcements","api","backup"] as SectionKey[]},
-    {title:"OPERATIONS",keys:["logs","developer","support","about"] as SectionKey[]}
+    {title:"MANAGEMENT",keys:["users","banned","tools","plans","payments","credits","redeem","referrals"] as SectionKey[]},
+    {title:"CONFIGURATION",keys:["settings","announcements","backup"] as SectionKey[]},
+    {title:"OPERATIONS",keys:["support","about"] as SectionKey[]}
   ];
   const renderRows=()=>{
     if(loading)return <div className="admin-empty"><div className="admin-spinner"/>Loading records…</div>;
     if(!filtered.length)return <div className="admin-empty">No records found. Apply the database setup SQL and add your first records.</div>;
+    if(section==="redeem")return <div className="admin-records">{filtered.map(row=><div className="admin-record" key={String(row.code||row.id)}><div className="admin-record-icon"><Ticket size={18}/></div><div className="admin-record-main"><strong className="mono">{valueText(row.code||row.id)}</strong><small>{valueText(row.credits)} credits · {valueText(row.used_count||0)} / {valueText(row.max_uses)} uses · {row.active===false?"Inactive":"Active"}</small><small>Created: {dateText(row.created_at)}</small></div>{row.active!==false&&<button className="admin-small" onClick={()=>void deactivateRedeemCode(String(row.code||row.id))}>Deactivate</button>}<span className="admin-tag">{row.active===false?"Inactive":"Active"}</span></div>)}</div>;
     if(section==="credits")return <div className="admin-table-wrap"><table><thead><tr><th>Email</th><th>Username</th><th>Current credits</th><th>Action</th></tr></thead><tbody>{filtered.map(row=><tr key={String(row.id)}><td>{valueText(row.email)}</td><td>{valueText(row.username||row.display_name||"—")}</td><td><strong>{valueText(row.credits)}</strong></td><td><button className="admin-small" disabled={Number(row.credits||0)===0} onClick={()=>void clearUserCredits(row)}>Clear credits</button></td></tr>)}</tbody></table></div>;
     if(section==="users"||section==="banned")return <div className="admin-table-wrap"><table><thead><tr><th>User ID</th><th>Email / Username</th><th>Role</th><th>Status</th><th>Credits</th><th>Credit / plan actions</th></tr></thead><tbody>{filtered.map(row=><tr key={String(row.id)}><td className="mono">{String(row.id).slice(0,8)}…</td><td>{valueText(row.email)}<small>{valueText(row.username||row.display_name||"—")}</small></td><td><select value={userEdits[String(row.id)]?.role||valueText(row.role)} onChange={e=>setUserEdits(v=>({...v,[String(row.id)]:{role:e.target.value,status:v[String(row.id)]?.status||valueText(row.status),delta:v[String(row.id)]?.delta||"0",reason:v[String(row.id)]?.reason||"Admin adjustment"}}))}><option value="user">User</option><option value="moderator">Moderator</option><option value="admin">Admin</option></select></td><td><select value={userEdits[String(row.id)]?.status||valueText(row.status)} onChange={e=>setUserEdits(v=>({...v,[String(row.id)]:{role:v[String(row.id)]?.role||valueText(row.role),status:e.target.value,delta:v[String(row.id)]?.delta||"0",reason:v[String(row.id)]?.reason||"Admin adjustment"}}))}><option value="active">Active</option><option value="suspended">Suspended</option><option value="banned">Banned</option></select></td><td>{valueText(row.credits)}</td><td><div className="admin-inline"><input aria-label="Credit adjustment" placeholder="+/- credits" value={userEdits[String(row.id)]?.delta||"0"} onChange={e=>setUserEdits(v=>({...v,[String(row.id)]:{role:v[String(row.id)]?.role||valueText(row.role),status:v[String(row.id)]?.status||valueText(row.status),delta:e.target.value,reason:v[String(row.id)]?.reason||"Admin adjustment"}}))}/><button className="admin-small" onClick={()=>updateUser(String(row.id))}>Save user</button><select value={planEdits[String(row.id)]||""} onChange={e=>setPlanEdits(v=>({...v,[String(row.id)]:e.target.value}))}><option value="">Assign plan…</option>{adminPlans.map(plan=><option key={plan.id} value={plan.id}>{plan.name} · {plan.credits} credits</option>)}</select><button className="admin-small" disabled={!planEdits[String(row.id)]} onClick={()=>void assignPlanToUser(String(row.id))}>Give plan</button></div></td></tr>)}</tbody></table></div>;
     if(section==="tools")return <div className="admin-records">{filtered.map(row=>{const cfg=(row.config&&typeof row.config==="object"?row.config:{}) as Record<string,string>;return <div className="admin-record" key={String(row.id)}><div className="admin-record-icon"><Wrench size={18}/></div><div className="admin-record-main"><strong>{valueText(row.name)}</strong><small>{valueText(row.description)} · ₹{Number(row.price_inr||0).toFixed(2)} per successful query</small><small className="mono">{cfg.api_url||"No API URL configured"}</small></div><label className="admin-switch"><input type="checkbox" checked={Boolean(row.enabled)} onChange={e=>toggleTool(String(row.id),e.target.checked)}/><span/></label><button className="admin-small" onClick={()=>void editTool(row)}>Edit</button><button className="admin-small" onClick={()=>void deleteTool(String(row.id))}>Delete</button></div>})}</div>;
@@ -420,11 +443,10 @@ export default function AdminPage() {
       <header className="admin-topbar"><div><div className="admin-kicker">CYBERX OSINT / CONTROL CENTER</div><h1>{active.label}</h1></div><div className="admin-top-actions"><span className="admin-online"><i/> Admin access verified</span><a className="admin-small" href="/" style={{textDecoration:"none"}}>Open User App</a><button title="Refresh" onClick={()=>{void loadRows();void loadCounts();}}><RefreshCw size={17}/></button><button title="Notifications"><Bell size={17}/></button><button className="admin-top-avatar" title="My admin profile" onClick={()=>setSection("profile")}>{(adminProfileDraft.display_name||authUser.email||"CX").slice(0,2).toUpperCase()}</button></div></header>
       <div className="admin-subtitle">{active.description}</div>
       {message&&<div className="admin-message"><CheckCircle2 size={16}/>{message}<button onClick={()=>setMessage("")}><X size={15}/></button></div>}
-      {section==="dashboard"&&<><section className="admin-welcome"><div><span>ADMINISTRATOR WORKSPACE</span><h2>Welcome back, CyberKing 👑</h2><p>Manage users, public-source tools, plans, credits and site operations from one place.</p></div><div className="admin-welcome-icon"><ShieldCheck size={48}/></div></section><div className="admin-stat-grid">{[{label:"Total users",value:counts.profiles||0,icon:Users},{label:"Available tools",value:counts.tools||0,icon:Wrench},{label:"Premium plans",value:counts.premium_plans||0,icon:Crown},{label:"Support tickets",value:counts.support_tickets||0,icon:Ticket},{label:"Payment records",value:counts.payment_records||0,icon:CreditCard},{label:"Referrals",value:counts.referral_claims||0,icon:Activity}].map(card=>{const Icon=card.icon;return <div className="admin-stat" key={card.label}><div><small>{card.label}</small><b>{card.value.toLocaleString()}</b></div><span><Icon size={21}/></span></div>})}</div><div className="admin-dashboard-grid"><div className="admin-panel"><h3><Zap size={18}/> Quick Actions</h3><div className="admin-quick-grid">{[{key:"users" as SectionKey,label:"Manage Users",icon:Users},{key:"tools" as SectionKey,label:"Manage Tools",icon:Wrench},{key:"plans" as SectionKey,label:"Premium Plans",icon:Crown},{key:"announcements" as SectionKey,label:"Announcement",icon:Megaphone},{key:"api" as SectionKey,label:"API Settings",icon:Link2},{key:"logs" as SectionKey,label:"View Logs",icon:FileClock}].map(a=>{const Icon=a.icon;return <button key={a.key} onClick={()=>setSection(a.key)}><Icon size={22}/>{a.label}<ChevronRight size={15}/></button>})}</div></div><div className="admin-panel"><h3><ShieldCheck size={18}/> Security checklist</h3><ul className="admin-checks"><li><CheckCircle2/> Admin role verified from database</li><li><CheckCircle2/> Row-level security policies required</li><li><CheckCircle2/> Public API keys only in browser</li><li><CheckCircle2/> Private person tracking disabled</li></ul></div></div></>}
+      {section==="dashboard"&&<><section className="admin-welcome"><div><span>ADMINISTRATOR WORKSPACE</span><h2>Welcome back, CyberKing 👑</h2><p>Manage users, public-source tools, plans, credits and site operations from one place.</p></div><div className="admin-welcome-icon"><ShieldCheck size={48}/></div></section><div className="admin-stat-grid">{[{label:"Total users",value:counts.profiles||0,icon:Users},{label:"Available tools",value:counts.tools||0,icon:Wrench},{label:"Premium plans",value:counts.premium_plans||0,icon:Crown},{label:"Support tickets",value:counts.support_tickets||0,icon:Ticket},{label:"Payment records",value:counts.payment_records||0,icon:CreditCard},{label:"Referrals",value:counts.referral_claims||0,icon:Activity}].map(card=>{const Icon=card.icon;return <div className="admin-stat" key={card.label}><div><small>{card.label}</small><b>{card.value.toLocaleString()}</b></div><span><Icon size={21}/></span></div>})}</div><div className="admin-dashboard-grid"><div className="admin-panel"><h3><Zap size={18}/> Quick Actions</h3><div className="admin-quick-grid">{[{key:"users" as SectionKey,label:"Manage Users",icon:Users},{key:"tools" as SectionKey,label:"Manage Tools",icon:Wrench},{key:"plans" as SectionKey,label:"Premium Plans",icon:Crown},{key:"announcements" as SectionKey,label:"Announcement",icon:Megaphone},{key:"redeem" as SectionKey,label:"Redeem Codes",icon:Ticket},{key:"referrals" as SectionKey,label:"Referral Rewards",icon:Users}].map(a=>{const Icon=a.icon;return <button key={a.key} onClick={()=>setSection(a.key)}><Icon size={22}/>{a.label}<ChevronRight size={15}/></button>})}</div></div><div className="admin-panel"><h3><ShieldCheck size={18}/> Security checklist</h3><ul className="admin-checks"><li><CheckCircle2/> Admin role verified from database</li><li><CheckCircle2/> Row-level security policies required</li><li><CheckCircle2/> Public API keys only in browser</li><li><CheckCircle2/> Private person tracking disabled</li></ul></div></div></>}
       {section==="profile"&&<section className="admin-panel" style={{maxWidth:760}}><div className="admin-panel-head"><div><h3><UserCircle size={18}/> My Administrator Profile</h3><small>View and update the profile connected to your verified admin login.</small></div><span className="admin-tag">Admin</span></div><div className="admin-info-grid"><div><small>Login email</small><b>{authUser.email||"—"}</b></div><div><small>Account role</small><b>Administrator</b></div><div><small>Auth user ID</small><b className="mono">{authUser.id}</b></div></div><div className="admin-form-grid" style={{marginTop:18}}><input value={adminProfileDraft.display_name} onChange={e=>setAdminProfileDraft(v=>({...v,display_name:e.target.value}))} placeholder="Display name" maxLength={60}/><input value={adminProfileDraft.username} onChange={e=>setAdminProfileDraft(v=>({...v,username:e.target.value.replace(/[^a-zA-Z0-9_]/g,"").slice(0,24)}))} placeholder="Username (3–24 characters)" maxLength={24}/></div><textarea value={adminProfileDraft.bio} onChange={e=>setAdminProfileDraft(v=>({...v,bio:e.target.value}))} placeholder="Profile bio" rows={4} maxLength={240} style={{width:"100%",marginTop:12}}/><div className="admin-form-foot"><button className="admin-primary" disabled={adminProfileSaving} onClick={()=>void saveAdminProfile()}><Save size={15}/>{adminProfileSaving?"Saving…":"Save profile"}</button></div></section>}
       {section==="referrals"&&<section className="admin-panel" style={{marginBottom:18}}><div className="admin-panel-head"><div><h3><Users size={18}/> Referral Reward Settings</h3><small>Set signup and referral credits. Rewards are issued once after email confirmation.</small></div></div><div className="admin-form-grid"><label>Normal signup credits<input type="number" min="0" max="2147483647" step="1" value={referralRewardForm.signup} onChange={e=>setReferralRewardForm(v=>({...v,signup:e.target.value}))}/></label><label>Referred user's credits<input type="number" min="0" max="2147483647" step="1" value={referralRewardForm.referred} onChange={e=>setReferralRewardForm(v=>({...v,referred:e.target.value}))}/></label><label>Referrer reward credits<input type="number" min="0" max="2147483647" step="1" value={referralRewardForm.referrer} onChange={e=>setReferralRewardForm(v=>({...v,referrer:e.target.value}))}/></label></div><div className="admin-form-foot"><button className="admin-primary" disabled={referralSettingsSaving} onClick={()=>void saveReferralSettings()}>{referralSettingsSaving?"Saving…":"Save referral rewards"}</button></div><p className="admin-hint">New users without a referral link receive the normal signup amount. Users who register through a valid referral link receive the referred-user amount, and the owner of that link receives the referrer amount.</p></section>}
       {section==="analytics"&&<div className="admin-stat-grid">{Object.entries(counts).map(([key,value])=><div className="admin-stat" key={key}><div><small>{key.replaceAll("_"," ")}</small><b>{value.toLocaleString()}</b></div><span><Activity size={21}/></span></div>)}</div>}
-      {section==="system"&&<div className="admin-panel"><h3><Server size={18}/> Runtime information</h3><div className="admin-info-grid"><div><small>Framework</small><b>Next.js 15</b></div><div><small>Runtime</small><b>Node.js</b></div><div><small>Database</small><b>Firebase PostgreSQL</b></div><div><small>Authentication</small><b>Firebase Auth</b></div><div><small>Admin authorization</small><b>Database role + RLS</b></div><div><small>Environment</small><b>{process.env.NODE_ENV}</b></div></div><p className="admin-hint">This panel reports configured integrations only; it does not invent CPU, storage or uptime metrics that the hosting provider has not supplied.</p></div>}
       {section==="backup"&&<div className="admin-panel"><h3><Database size={18}/> Backup & Restore</h3><div className="admin-warning">Database backups are controlled by your Firebase project and plan. This page does not claim to create a backup from the browser.</div><ol className="admin-steps"><li>Open your Firebase project dashboard.</li><li>Use Database backups / Point-in-Time Recovery if enabled on your plan.</li><li>Before restoring, verify the target project and the backup timestamp.</li><li>After restore, run the app build and verify Auth, RLS and table access.</li></ol><a className="admin-primary-link" href="https://backend.com/dashboard/projects" target="_blank" rel="noreferrer">Open Firebase dashboard <ArrowRight size={15}/></a></div>}
       {section==="about"&&<div className="admin-panel"><div className="admin-about-logo"><Shield size={42}/></div><h2>CyberX OSINT</h2><p>Public-source research workspace with an Android-first interface and database-protected administration.</p><div className="admin-warning">Safety scope: public technical metadata and public links only. No private-person tracking, account intrusion, password discovery, leaked personal-data search, or precise location claims.</div><a href="https://github.com/Xcyberking/CyberOsintIndia" target="_blank" rel="noreferrer">Repository <ArrowRight size={15}/></a></div>}
       {section==="settings"&&<section className="admin-panel" style={{marginBottom:18}}>
@@ -433,6 +455,15 @@ export default function AdminPage() {
         <div style={{marginTop:14}}><label className="admin-form-label">Payment instructions shown to users</label><textarea rows={4} value={paymentInstructionsDraft} onChange={e=>setPaymentInstructionsDraft(e.target.value)} placeholder="Enter UPI name, payment instructions, and expected steps…"/></div>
         <div className="admin-form-foot"><button className="admin-primary" disabled={qrUploading} onClick={()=>void saveManualPaymentSettings()}>Save payment instructions</button></div>
         {gatewayMessage&&<div className="admin-message" style={{marginTop:12}}>{gatewayMessage}</div>}
+      </section>}
+      {section==="redeem"&&<section className="admin-panel" style={{marginBottom:18}}>
+        <div className="admin-panel-head"><div><h3><Ticket size={18}/> Create custom redeem code</h3><small>Each account can redeem a code once. The code automatically closes when its user limit is reached.</small></div></div>
+        <div className="admin-form-grid">
+          <label>Redeem code<input value={redeemDraft.code} onChange={e=>setRedeemDraft(v=>({...v,code:e.target.value.toUpperCase().replace(/[^A-Z0-9-]/g,"").slice(0,32)}))} placeholder="e.g. CYBERX-100" maxLength={32}/></label>
+          <label>Credits per user<input type="number" min="1" max="1000000" step="1" value={redeemDraft.credits} onChange={e=>setRedeemDraft(v=>({...v,credits:e.target.value}))}/></label>
+          <label>Maximum users / redemptions<input type="number" min="1" max="100000" step="1" value={redeemDraft.maxUses} onChange={e=>setRedeemDraft(v=>({...v,maxUses:e.target.value}))}/></label>
+        </div>
+        <div className="admin-form-foot"><button className="admin-primary" disabled={redeemSaving} onClick={()=>void createRedeemCode()}>{redeemSaving?"Creating…":"Create redeem code"}</button></div>
       </section>}
       {section==="credits"&&<section className="admin-panel" style={{marginBottom:18}}><div className="admin-panel-head"><div><h3><Coins size={18}/> Bulk credit manager</h3><small>Add or deduct credits for all users in one audited operation.</small></div></div><div className="admin-form-grid"><input type="number" step="1" value={bulkCreditDelta} onChange={e=>setBulkCreditDelta(e.target.value)} placeholder="Credits to add / deduct"/><input value={bulkCreditReason} onChange={e=>setBulkCreditReason(e.target.value)} placeholder="Reason shown in credit history"/></div><div className="admin-form-foot"><button className="admin-primary" disabled={bulkCreditBusy} onClick={()=>void bulkGrantCredits()}>{bulkCreditBusy?"Applying…":"Apply to all users"}</button></div></section>}
       {active.table&&<section className="admin-panel admin-data-panel"><div className="admin-panel-head"><div><h3>{active.label}</h3><small>{rows.length} records loaded · maximum 100 shown</small></div><div className="admin-data-actions"><div className="admin-search"><Search size={16}/><input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search records…"/></div><button onClick={()=>void loadRows()}><RefreshCw size={16}/></button></div></div>
