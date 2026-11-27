@@ -356,16 +356,14 @@ export default function AdminPage() {
     if(!backend)return;
     if(!["image/png","image/jpeg","image/webp"].includes(file.type)||file.size>2*1024*1024){setGatewayMessage("QR must be PNG, JPG or WebP and no larger than 2 MB.");return;}
     setQrUploading(true);setGatewayMessage("");
-    const reader=new FileReader();
-    reader.onload=async()=>{
-      const value=String(reader.result||"");
-      if(!value.startsWith("data:image/")){setGatewayMessage("Could not read the QR image.");setQrUploading(false);return;}
-      const {error}=await backend!.from("site_settings").upsert({key:"payment_qr_url",value,updated_by:authUser?.id,updated_at:new Date().toISOString()},{onConflict:"key"});
-      setGatewayMessage(error?error.message:"Payment QR uploaded and published to the Store.");
-      setQrUploading(false);
-    };
-    reader.onerror=()=>{setGatewayMessage("QR file could not be read.");setQrUploading(false);};
-    reader.readAsDataURL(file);
+    const path="payment-qr/"+Date.now()+"-"+file.name.replace(/[^a-zA-Z0-9._-]/g,"");
+    const {error:uploadError}=await backend.storage.from("cyberx-site-media").upload(path,file,{upsert:false,contentType:file.type});
+    if(uploadError){setGatewayMessage(uploadError.message);setQrUploading(false);return;}
+    const {data,error:urlError}=await backend.storage.from("cyberx-site-media").createSignedUrl(path,31536000);
+    if(urlError||!data?.signedUrl){setGatewayMessage(urlError?.message||"Could not create QR image URL.");setQrUploading(false);return;}
+    const {error}=await backend.from("site_settings").upsert({key:"payment_qr_url",value:data.signedUrl,updated_by:authUser?.id,updated_at:new Date().toISOString()},{onConflict:"key"});
+    setGatewayMessage(error?error.message:"Payment QR uploaded and published to the Store.");
+    setQrUploading(false);
   }
 
   const filtered=useMemo(()=>rows.filter(row=>JSON.stringify(row).toLowerCase().includes(search.toLowerCase())),[rows,search]);
