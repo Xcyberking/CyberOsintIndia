@@ -8,14 +8,16 @@ import { firebaseAuth, firestore } from "@/lib/firebase/client";
 export default function AuthCallbackPage() {
   const [message, setMessage] = useState("Checking your Firebase sign-in…");
   useEffect(() => {
-    if (!firebaseAuth || !firestore) { setMessage("Firebase is not configured. Contact the site administrator."); return; }
-    const stop = onAuthStateChanged(firebaseAuth, async user => {
+    const db = firestore;
+    const auth = firebaseAuth;
+    if (!auth || !db) { setMessage("Firebase is not configured. Contact the site administrator."); return; }
+    const stop = onAuthStateChanged(auth, async user => {
       if (!user) { setMessage("No active sign-in was found. Return to the app and sign in again."); return; }
       const params = new URLSearchParams(window.location.search);
       const requested = params.get("next") || "/";
       const next = requested.startsWith("/") && !requested.startsWith("//") ? requested : "/";
       if (next.startsWith("/admin")) {
-        const profile = await getDoc(doc(firestore, "profiles", user.uid));
+        const profile = await getDoc(doc(db, "profiles", user.uid));
         if (!profile.exists() || profile.data().role !== "admin" || profile.data().status !== "active") {
           setMessage("This Firebase account has not been granted administrator access.");
           return;
