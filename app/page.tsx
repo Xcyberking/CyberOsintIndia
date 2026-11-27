@@ -64,6 +64,7 @@ export default function HomePage() {
   const [depositAmount,setDepositAmount]=useState("100");
   const [selectedPlan,setSelectedPlan]=useState(""); const [paymentReference,setPaymentReference]=useState(""); const [paymentProof,setPaymentProof]=useState<File|null>(null);
   const [storeMessage,setStoreMessage]=useState(""); const [savingPayment,setSavingPayment]=useState(false); const [role,setRole]=useState("user");
+  const [redeemCode,setRedeemCode]=useState(""); const [redeemBusy,setRedeemBusy]=useState(false); const [redeemMessage,setRedeemMessage]=useState("");
   const [myPayments,setMyPayments]=useState<{id:string;provider_reference:string|null;amount_inr:number;status:string;created_at:string;admin_note:string|null;user_note:string|null;payment_type?:string}[]>([]);
   const [walletTransactions,setWalletTransactions]=useState<{id:string;amount_inr:number;balance_after:number;transaction_type:string;description:string;created_at:string}[]>([]);
   const [supportTickets,setSupportTickets]=useState<{id:string;subject:string;message:string;status:string;admin_reply:string|null;created_at:string;updated_at:string}[]>([]);
@@ -408,6 +409,20 @@ export default function HomePage() {
     const {data}=await backend.storage.from("cyberx-avatars").createSignedUrl(path,3600);
     if(data?.signedUrl){const {error:e}=await backend.from("profiles").update({avatar_url:path,updated_at:new Date().toISOString()}).eq("id",user.id);setProfileMessage(e?e.message:"Profile photo updated.");if(!e)setAvatarUrl(data.signedUrl);}
   }
+  async function submitRedeemCode(){
+    if(!backend||!redeemCode.trim()){setRedeemMessage("Enter a redeem code first.");return;}
+    setRedeemBusy(true);setRedeemMessage("");
+    const {data,error}=await backend.rpc("redeem_code",{p_code:redeemCode.trim().toUpperCase()});
+    if(error)setRedeemMessage(error.message);
+    else {
+      const result=data as {credits?:number;balance?:number}|null;
+      if(result&&Number.isSafeInteger(result.balance))setCredits(Number(result.balance));
+      setRedeemMessage("Success! "+String(result?.credits||0)+" credits added to your account.");
+      setRedeemCode("");
+    }
+    setRedeemBusy(false);
+  }
+
   async function submitWalletDeposit(){
     if(!backend){setStoreMessage("Payment service is unavailable.");return;}
     const amount=Number(depositAmount);
@@ -614,6 +629,13 @@ export default function HomePage() {
         <div className="section-head" style={{marginTop:0}}><h3><Store size={18} style={{verticalAlign:"middle",marginRight:8}}/>Wallet & Deposits</h3><strong>Balance: ₹{walletBalance.toFixed(2)}</strong></div>
         {paymentQr&&<div style={{textAlign:"center",padding:16,background:"#fff",borderRadius:18,marginBottom:16}}><img src={paymentQr} alt="Admin payment QR" style={{width:220,maxWidth:"100%",height:"auto",objectFit:"contain"}}/><p style={{color:"#123",fontWeight:700}}>Scan to pay</p></div>}
         {paymentInstructions&&<p className="notice">{paymentInstructions}</p>}
+        <div style={{padding:16,border:"1px solid #cfe2fb",borderRadius:14,background:"#f7faff",marginBottom:16}}>
+          <div className="section-head" style={{marginTop:0}}><h3><Gift size={18} style={{verticalAlign:"middle",marginRight:7}}/>Redeem a code</h3><strong>{credits} credits</strong></div>
+          <p className="notice" style={{color:"#647794"}}>Enter a code shared by the administrator. Each code can be used once per account and may have a limited number of users.</p>
+          <label className="field-label">Redeem code</label><input className="field" value={redeemCode} onChange={e=>setRedeemCode(e.target.value.toUpperCase().replace(/[^A-Z0-9-]/g,"").slice(0,32))} placeholder="Enter your code" maxLength={32}/>
+          <button className="primary-btn" style={{marginTop:12}} disabled={redeemBusy||!redeemCode.trim()} onClick={()=>void submitRedeemCode()}>{redeemBusy?"Redeeming…":"Redeem credits"}</button>
+          {redeemMessage&&<p className={redeemMessage.startsWith("Success")?"notice":"error"}>{redeemMessage}</p>}
+        </div>
         <div style={{padding:16,border:"1px solid #dce8f8",borderRadius:14,background:"#f7faff"}}>
           <h3 style={{marginTop:0}}>Add money to wallet</h3>
           <p className="notice" style={{color:"#647794"}}>Pay using the QR shown above. Enter the exact amount and UTR from your payment app. This is a manual review flow; your balance is not credited until an administrator confirms receipt in the bank/UPI account.</p>
