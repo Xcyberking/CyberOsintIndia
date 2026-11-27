@@ -140,6 +140,6 @@ export function createClient(_url?: string, _key?: string) {
     } }) }),
     removeChannel: async (channel: any) => { channel?.unsubscribe?.(); }
   };
-  if (!configured) return client;
+  if (!configured) return null;
   return client;
 }
