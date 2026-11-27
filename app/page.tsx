@@ -110,7 +110,7 @@ export default function HomePage() {
     if (!backend) return;
     let active = true;
     void Promise.all([
-      backend.from("tools").select("slug,name,description,category,enabled,handler,credit_cost,price_inr,input_label,result_note,config"),
+      backend.from("tools").select("slug,name,description,category,enabled,handler,credit_cost,price_inr,input_label,result_note,config").eq("enabled",true),
       backend.from("premium_plans").select("id,name,description,price_inr,credits,duration_days").eq("is_active",true).order("price_inr"),
       backend.from("site_settings").select("key,value").in("key",["payment_qr_url","payment_instructions","default_signup_credits","referral_new_user_credits","referral_reward"])
     ]).then(([t,p,s])=>{
