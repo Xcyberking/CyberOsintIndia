@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { adminDb, verifyBearer } from "@/lib/firebase/admin";
+import type { DocumentReference } from "firebase-admin/firestore";
 export const runtime = "nodejs";
 
 function reward(value: unknown, fallback: number) {
@@ -24,7 +25,7 @@ export async function POST(request: Request) {
     const referredCredits = reward(settings[1].data()?.value, 7);
     const referrerCredits = reward(settings[2].data()?.value, 3);
     const referralCode = String(profileSnap.data()?.pending_referral_code || "").trim().toUpperCase();
-    let referrerRef: FirebaseFirestore.DocumentReference | null = null;
+    let referrerRef: DocumentReference | null = null;
     if (referralCode) {
       const match = await db.collection("profiles").where("referral_code","==",referralCode).limit(1).get();
       if (!match.empty && match.docs[0].id !== decoded.uid && match.docs[0].data().status === "active") referrerRef = match.docs[0].ref;
@@ -32,20 +33,19 @@ export async function POST(request: Request) {
     await db.runTransaction(async tx => {
       const fresh = await tx.get(profileRef);
       if (!fresh.exists || fresh.data()?.signup_processed === true) return;
+      const referrer = referrerRef ? await tx.get(referrerRef) : null;
+      const hasReferrer = Boolean(referrer?.exists && referrerRef);
       const now = new Date().toISOString();
-      const referredBonus = referrerRef ? referredCredits : 0;
+      const referredBonus = hasReferrer ? referredCredits : 0;
       tx.update(profileRef, { credits: Number(fresh.data()?.credits || 0) + signupCredits + referredBonus, signup_processed: true, pending_referral_code: null, updated_at: now });
       const signupLedger = db.collection("credit_transactions").doc();
       tx.set(signupLedger,{user_id:decoded.uid,delta:signupCredits,reason:"Signup reward",created_at:now});
-      if (referrerRef) {
-        const referrer = await tx.get(referrerRef);
-        if (referrer.exists) {
-          tx.update(referrerRef,{credits:Number(referrer.data()?.credits||0)+referrerCredits,updated_at:now});
-          const referrerLedger = db.collection("credit_transactions").doc();
-          tx.set(referrerLedger,{user_id:referrerRef.id,delta:referrerCredits,reason:"Referral reward",created_at:now});
-          const claim = db.collection("referral_claims").doc();
-          tx.set(claim,{id:claim.id,referrer_id:referrerRef.id,referred_id:decoded.uid,reward:referrerCredits,status:"qualified",created_at:now});
-        }
+      if (hasReferrer && referrerRef && referrer) {
+        tx.update(referrerRef,{credits:Number(referrer.data()?.credits||0)+referrerCredits,updated_at:now});
+        const referrerLedger = db.collection("credit_transactions").doc();
+        tx.set(referrerLedger,{user_id:referrerRef.id,delta:referrerCredits,reason:"Referral reward",created_at:now});
+        const claim = db.collection("referral_claims").doc();
+        tx.set(claim,{id:claim.id,referrer_id:referrerRef.id,referred_id:decoded.uid,reward:referrerCredits,status:"qualified",created_at:now});
       }
     });
     return NextResponse.json({ok:true});
