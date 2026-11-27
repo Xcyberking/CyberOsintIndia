@@ -22,7 +22,7 @@ async function ensureProfile(user: any) {
     id: user.uid, email: user.email || "", display_name: user.displayName || "",
     bio: "", username: "", avatar_url: "", credits: 0, wallet_balance: 0,
     role: "user", status: "active", plan_name: "Free", plan_expires_at: null,
-    referral_code: user.uid.slice(0, 8).toUpperCase(),
+    referral_code: user.uid, signup_processed: false,
     created_at: new Date().toISOString(), updated_at: new Date().toISOString()
   });
 }
@@ -119,7 +119,7 @@ export function createClient(_url?: string, _key?: string) {
           const c = await createUserWithEmailAndPassword(firebaseAuth, email, password);
           const name = options?.data?.name || "";
           if (name) await updateProfile(c.user, { displayName: name });
-          await setDoc(doc(firestore, "profiles", c.user.uid), { id: c.user.uid, email, display_name: name, bio: "", username: "", avatar_url: "", credits: 0, wallet_balance: 0, role: "user", status: "active", plan_name: "Free", plan_expires_at: null, referral_code: c.user.uid.slice(0, 8).toUpperCase(), pending_referral_code: String(options?.data?.referral_code || "").trim().toUpperCase(), signup_processed: false, created_at: new Date().toISOString(), updated_at: new Date().toISOString() });
+          await setDoc(doc(firestore, "profiles", c.user.uid), { id: c.user.uid, email, display_name: name, bio: "", username: "", avatar_url: "", credits: 0, wallet_balance: 0, role: "user", status: "active", plan_name: "Free", plan_expires_at: null, referral_code: c.user.uid, pending_referral_code: String(options?.data?.referral_code || "").trim().toUpperCase(), signup_processed: false, created_at: new Date().toISOString(), updated_at: new Date().toISOString() });
           try { await sendEmailVerification(c.user); } catch {}
           await signOut(firebaseAuth);
           return { data: { user: authUser(c.user), session: null }, error: null };
