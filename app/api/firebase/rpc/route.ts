@@ -17,11 +17,10 @@ export async function POST(request: Request) {
       if (!Number.isFinite(amount) || amount < 10 || amount > 50000 || utr.length < 6 || utr.length > 80) return json({ error: "Invalid deposit amount or UTR." }, 400);
       const profile = await db.collection("profiles").doc(uid).get();
       if (!profile.exists || profile.data()?.status !== "active") return json({ error: "Account is not active." }, 403);
-      const pending = await db.collection("wallet_transactions").where("user_id", "==", uid).where("transaction_type", "==", "deposit_pending").limit(1).get();
-      if (!pending.empty) return json({ error: "A deposit request is already pending." }, 409);
+      const pending = await db.collection("payment_records").where("user_id", "==", uid).where("status", "==", "pending").where("payment_type", "==", "wallet").limit(1).get();
+      if (!pending.empty) return json({ error: "A wallet deposit request is already pending." }, 409);
       const ref = db.collection("payment_records").doc();
       await ref.set({ id: ref.id, user_id: uid, provider: "manual_qr", provider_reference: utr, amount_inr: amount, status: "pending", proof_url: args.p_proof_url || null, payment_type: "wallet", created_at: new Date().toISOString() });
-      await db.collection("wallet_transactions").add({ user_id: uid, amount_inr: amount, balance_after: Number(profile.data()?.wallet_balance || 0), transaction_type: "deposit_pending", description: "Wallet deposit request pending approval", created_at: new Date().toISOString(), payment_id: ref.id });
       return json({ data: ref.id });
     }
     if (name === "consume_tool_wallet") {
@@ -43,6 +42,38 @@ export async function POST(request: Request) {
         tx.set(ledger, { id: ledger.id, user_id: uid, amount_inr: -cost, balance_after: balance, transaction_type: "tool_usage", description: "Tool query: " + (tool.name || slug), created_at: new Date().toISOString() });
       });
       return json({ data: balance });
+    }
+    if (name === "admin_review_payment") {
+      const paymentId = String(args.p_payment_id || "");
+      const approve = args.p_approve === true;
+      const paymentRef = db.collection("payment_records").doc(paymentId);
+      await db.runTransaction(async tx => {
+        const paymentSnap = await tx.get(paymentRef);
+        if (!paymentSnap.exists) throw new Error("Payment request not found.");
+        const payment = paymentSnap.data()!;
+        if (payment.status !== "pending") throw new Error("This payment has already been reviewed.");
+        const now = new Date().toISOString();
+        if (!approve) {
+          tx.update(paymentRef, { status: "rejected", admin_note: String(args.p_admin_note || "Payment not verified."), reviewed_at: now, reviewed_by: uid });
+          return;
+        }
+        const userRef = db.collection("profiles").doc(String(payment.user_id));
+        const userSnap = await tx.get(userRef);
+        if (!userSnap.exists || userSnap.data()?.status !== "active") throw new Error("Payment owner account is not active.");
+        if (payment.payment_type === "wallet") {
+          const balance = Number(userSnap.data()?.wallet_balance || 0) + Number(payment.amount_inr || 0);
+          tx.update(userRef, { wallet_balance: balance, updated_at: now });
+          const ledger = db.collection("wallet_transactions").doc();
+          tx.set(ledger, { id: ledger.id, user_id: payment.user_id, amount_inr: Number(payment.amount_inr || 0), balance_after: balance, transaction_type: "deposit", description: "Manual wallet deposit approved", created_at: now, payment_id: paymentId });
+        } else if (payment.plan_id) {
+          const planSnap = await tx.get(db.collection("premium_plans").doc(String(payment.plan_id)));
+          if (!planSnap.exists) throw new Error("Selected plan no longer exists.");
+          const plan = planSnap.data()!;
+          tx.update(userRef, { plan_name: plan.name, plan_expires_at: new Date(Date.now() + Number(plan.duration_days || 30) * 86400000).toISOString(), credits: Number(userSnap.data()?.credits || 0) + Number(plan.credits || 0), updated_at: now });
+        }
+        tx.update(paymentRef, { status: "approved", admin_note: args.p_admin_note || "Payment verified by administrator.", reviewed_at: now, reviewed_by: uid });
+      });
+      return json({ data: true });
     }
     if (name === "admin_update_user") {
       const id = String(args.target_user_id || "");
