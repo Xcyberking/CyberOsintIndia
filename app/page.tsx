@@ -23,13 +23,6 @@ const tools: ToolInfo[] = [
   { key: "social", title: "Social Media Analyzer", description: "Open public profile links for a username across platforms.", icon: Share2, category: "Public profiles" },
   { key: "breach", title: "Breach Self-Check", description: "Open an official service to check your own email safely.", icon: Fingerprint, category: "Account safety" }
 ];
-type RazorpayOptions = {
-  key:string;amount:number;currency:string;name:string;description:string;order_id:string;
-  prefill?:{email?:string};theme?:{color?:string};
-  handler:(response:{razorpay_payment_id:string;razorpay_order_id:string;razorpay_signature:string})=>void;
-  modal?:{ondismiss?:()=>void};
-};
-declare global { interface Window { Razorpay?: new (options:RazorpayOptions)=>{open:()=>void}; } }
 type HistoryItem = { title: string; query: string; date: string };
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -61,7 +54,7 @@ export default function HomePage() {
   const [authBusy, setAuthBusy] = useState(false);
   const [mobileMenu, setMobileMenu] = useState(false);
   const [enabledToolSlugs, setEnabledToolSlugs] = useState<string[]>(["username-tracker","email-validator","ip-lookup","domain-lookup","url-safety","dns-lookup","reverse-image-search","social-media-analyzer","breach-self-check"]);
-  const [dbTools,setDbTools]=useState<{slug:string;name:string;description:string;category:string;enabled:boolean;handler:string;credit_cost:number;input_label:string;result_note:string;config?:Record<string,unknown>}[]>([]);
+  const [dbTools,setDbTools]=useState<{slug:string;name:string;description:string;category:string;enabled:boolean;handler:string;credit_cost:number;price_inr:number;input_label:string;result_note:string;config?:Record<string,unknown>}[]>([]);
   const [username,setUsername]=useState(""); const [avatarUrl,setAvatarUrl]=useState("");
   const [credits,setCredits]=useState(0); const [planName,setPlanName]=useState("Free"); const [planExpires,setPlanExpires]=useState("");
   const [referralCode,setReferralCode]=useState(""); const [referralCount,setReferralCount]=useState(0); const [referralCredits,setReferralCredits]=useState(0);
@@ -69,11 +62,12 @@ export default function HomePage() {
   const [referralShareMessage,setReferralShareMessage]=useState("");
   const [plans,setPlans]=useState<{id:string;name:string;description:string;price_inr:number;credits:number;duration_days:number}[]>([]);
   const [paymentQr,setPaymentQr]=useState(""); const [paymentInstructions,setPaymentInstructions]=useState("");
-  const [gatewayEnabled,setGatewayEnabled]=useState(false);
-
+  const [walletBalance,setWalletBalance]=useState(0);
+  const [depositAmount,setDepositAmount]=useState("100");
   const [selectedPlan,setSelectedPlan]=useState(""); const [paymentReference,setPaymentReference]=useState(""); const [paymentProof,setPaymentProof]=useState<File|null>(null);
   const [storeMessage,setStoreMessage]=useState(""); const [savingPayment,setSavingPayment]=useState(false); const [role,setRole]=useState("user");
-  const [myPayments,setMyPayments]=useState<{id:string;provider_reference:string|null;amount_inr:number;status:string;created_at:string;admin_note:string|null;user_note:string|null}[]>([]);
+  const [myPayments,setMyPayments]=useState<{id:string;provider_reference:string|null;amount_inr:number;status:string;created_at:string;admin_note:string|null;user_note:string|null;payment_type?:string}[]>([]);
+  const [walletTransactions,setWalletTransactions]=useState<{id:string;amount_inr:number;balance_after:number;transaction_type:string;description:string;created_at:string}[]>([]);
   const [supportTickets,setSupportTickets]=useState<{id:string;subject:string;message:string;status:string;admin_reply:string|null;created_at:string;updated_at:string}[]>([]);
   const [supportSubject,setSupportSubject]=useState(""); const [supportMessage,setSupportMessage]=useState("");
   const [supportNotice,setSupportNotice]=useState(""); const [supportBusy,setSupportBusy]=useState(false);
@@ -89,7 +83,7 @@ export default function HomePage() {
 
   async function hydrateUser(user: { id: string; email?: string | null; user_metadata?: Record<string, unknown> }) {
     if (!supabase) return;
-    const { data: profile } = await supabase.from("profiles").select("status,display_name,bio,username,avatar_url,credits,role,plan_name,plan_expires_at,referral_code").eq("id", user.id).maybeSingle();
+    const { data: profile } = await supabase.from("profiles").select("status,display_name,bio,username,avatar_url,credits,wallet_balance,role,plan_name,plan_expires_at,referral_code").eq("id", user.id).maybeSingle();
     if (profile?.status && profile.status !== "active") {
       await supabase.auth.signOut();
       setUserEmail(""); setUserId("");
@@ -99,7 +93,7 @@ export default function HomePage() {
     setUserId(user.id);
     setUserEmail(user.email || "");
     setProfileName(profile?.display_name || (typeof user.user_metadata?.name === "string" ? user.user_metadata.name : user.email?.split("@")[0]) || "");
-    setProfileBio(profile?.bio || ""); setUsername(profile?.username||""); if(profile?.avatar_url){const {data:av}=await supabase.storage.from("cyberx-avatars").createSignedUrl(profile.avatar_url,3600);setAvatarUrl(av?.signedUrl||"");}else setAvatarUrl(""); setCredits(profile?.credits||0); setRole(profile?.role||"user"); setPlanName(profile?.plan_name||"Free"); setPlanExpires(profile?.plan_expires_at||""); setReferralCode(profile?.referral_code||"");
+    setProfileBio(profile?.bio || ""); setUsername(profile?.username||""); if(profile?.avatar_url){const {data:av}=await supabase.storage.from("cyberx-avatars").createSignedUrl(profile.avatar_url,3600);setAvatarUrl(av?.signedUrl||"");}else setAvatarUrl(""); setCredits(profile?.credits||0); setWalletBalance(Number(profile?.wallet_balance||0)); setRole(profile?.role||"user"); setPlanName(profile?.plan_name||"Free"); setPlanExpires(profile?.plan_expires_at||""); setReferralCode(profile?.referral_code||"");
     const { data } = await supabase.from("search_history").select("tool_slug,input_summary,created_at")
       .eq("user_id", user.id).order("created_at", { ascending: false }).limit(30);
     if (data) setHistory(data.map((item) => ({
@@ -118,7 +112,7 @@ export default function HomePage() {
     if (!supabase) return;
     let active = true;
     void Promise.all([
-      supabase.from("tools").select("slug,name,description,category,enabled,handler,credit_cost,input_label,result_note,config"),
+      supabase.from("tools").select("slug,name,description,category,enabled,handler,credit_cost,price_inr,input_label,result_note,config"),
       supabase.from("premium_plans").select("id,name,description,price_inr,credits,duration_days").eq("is_active",true).order("price_inr"),
       supabase.from("site_settings").select("key,value").in("key",["payment_qr_url","payment_instructions","default_signup_credits","referral_new_user_credits","referral_reward"])
     ]).then(([t,p,s])=>{
@@ -157,53 +151,13 @@ export default function HomePage() {
         filter: "id=eq." + userId
       }, (payload) => {
         const nextCredits = Number((payload.new as { credits?: unknown }).credits);
+        const nextWallet = Number((payload.new as { wallet_balance?: unknown }).wallet_balance);
         if (Number.isSafeInteger(nextCredits) && nextCredits >= 0) setCredits(nextCredits);
+        if (Number.isFinite(nextWallet) && nextWallet >= 0) setWalletBalance(nextWallet);
       })
       .subscribe();
     return () => { void supabase.removeChannel(channel); };
   }, [userId]);
-
-  useEffect(()=>{
-    if(page!=="Store"||!userEmail||!supabase)return;
-    let active=true;
-    void supabase.functions.invoke("payment-gateway",{body:{action:"public_config"}}).then(({data,error})=>{
-      if(active)setGatewayEnabled(!error&&Boolean(data?.enabled));
-    });
-    return ()=>{active=false;};
-  },[page,userEmail]);
-
-  async function startGatewayPayment(planId:string){
-    if(!supabase)return;
-    setSavingPayment(true);setStoreMessage("");
-    try{
-      const {data:order,error}=await supabase.functions.invoke("payment-gateway",{body:{action:"create_order",plan_id:planId}});
-      if(error||order?.error)throw new Error(error?.message||order.error);
-      if(!order?.order_id||!order?.key_id||!order?.payment_record_id)throw new Error("Payment order response is incomplete.");
-      if(!window.Razorpay)await new Promise<void>((resolve,reject)=>{
-        const script=document.createElement("script");script.src="https://checkout.razorpay.com/v1/checkout.js";
-        script.onload=()=>resolve();script.onerror=()=>reject(new Error("Could not load Razorpay Checkout."));
-        document.body.appendChild(script);
-      });
-      if(!window.Razorpay)throw new Error("Razorpay Checkout is unavailable.");
-      const plan=plans.find(item=>item.id===planId);
-      const checkout=new window.Razorpay({
-        key:order.key_id,amount:order.amount,currency:order.currency,name:"CyberX OSINT",
-        description:plan?.name||order.description,order_id:order.order_id,prefill:{email:userEmail},theme:{color:"#0872f9"},
-        handler:async response=>{
-          const {data:verified,error:verifyError}=await supabase!.functions.invoke("payment-gateway",{body:{
-            action:"verify_payment",payment_record_id:order.payment_record_id,
-            razorpay_payment_id:response.razorpay_payment_id,razorpay_order_id:response.razorpay_order_id,
-            razorpay_signature:response.razorpay_signature
-          }});
-          if(verifyError||verified?.error)setStoreMessage(verifyError?.message||verified.error);
-          else {setStoreMessage("Payment verified successfully. Your plan and credits are now active.");const {data:{user}}=await supabase!.auth.getUser();if(user)await hydrateUser(user);}
-          setSavingPayment(false);
-        },
-        modal:{ondismiss:()=>{setSavingPayment(false);setStoreMessage("Payment window closed. No credits were added.");}}
-      });
-      checkout.open();
-    }catch(e){setStoreMessage(e instanceof Error?e.message:"Could not start payment.");setSavingPayment(false);}
-  }
 
   const goTool = (key: ToolKey) => { setTool(key); setPage("Tool"); setQuery(""); setResult(null); setError(""); };
   const addHistory = async (title: string, value: string) => {
@@ -225,7 +179,7 @@ export default function HomePage() {
         if(proxyError||proxyResult?.error)throw new Error(proxyError?.message||proxyResult.error);
         data=proxyResult.result;
         creditsHandledByProxy=true;
-        if(typeof proxyResult.remaining_credits==="number")setCredits(proxyResult.remaining_credits);
+        if(typeof proxyResult.remaining_wallet==="number")setWalletBalance(proxyResult.remaining_wallet);
       } else if (tool === "ip") {
         const response = await fetch("/api/ip?address=" + encodeURIComponent(query.trim()));
         data = await response.json();
@@ -316,7 +270,7 @@ export default function HomePage() {
           note: "These are direct public profile links. No accounts are scraped and no match is claimed."
         };
       }
-      if(supabase&&!creditsHandledByProxy){const {data:{user}}=await supabase.auth.getUser();if(user){const slug=toolSlug[tool]||tool;const {data:remaining,error:creditError}=await supabase.rpc("consume_tool_credit",{p_tool_slug:slug,p_query:query.trim()});if(creditError)throw new Error(creditError.message);if(typeof remaining==="number")setCredits(remaining);}}
+      if(supabase&&!creditsHandledByProxy){const {data:{user}}=await supabase.auth.getUser();if(user){const slug=toolSlug[tool]||tool;const {data:remaining,error:creditError}=await supabase.rpc("consume_tool_wallet",{p_tool_slug:slug});if(creditError)throw new Error(creditError.message);if(typeof remaining==="number")setWalletBalance(remaining);}}
       setResult(data); await addHistory(selectedTool.title, query.trim());
     } catch (e) {
       setError(e instanceof Error ? e.message : "Something went wrong.");
@@ -456,6 +410,29 @@ export default function HomePage() {
     const {data}=await supabase.storage.from("cyberx-avatars").createSignedUrl(path,3600);
     if(data?.signedUrl){const {error:e}=await supabase.from("profiles").update({avatar_url:path,updated_at:new Date().toISOString()}).eq("id",user.id);setProfileMessage(e?e.message:"Profile photo updated.");if(!e)setAvatarUrl(data.signedUrl);}
   }
+  async function submitWalletDeposit(){
+    if(!supabase){setStoreMessage("Payment service is unavailable.");return;}
+    const amount=Number(depositAmount);
+    if(!Number.isFinite(amount)||amount<10||amount>50000||Math.abs(Math.round(amount*100)-amount*100)>0.000001){setStoreMessage("Enter an amount from ₹10 to ₹50,000 (up to 2 decimal places).");return;}
+    const utr=paymentReference.trim();
+    if(utr.length<6||utr.length>80){setStoreMessage("Enter a valid UTR / transaction reference (6–80 characters).");return;}
+    setSavingPayment(true);setStoreMessage("");
+    const {data:{user}}=await supabase.auth.getUser();
+    if(!user){setStoreMessage("Please sign in again.");setSavingPayment(false);return;}
+    let proofUrl="";
+    if(paymentProof){
+      if(!["image/png","image/jpeg","image/webp"].includes(paymentProof.type)||paymentProof.size>5*1024*1024){setStoreMessage("Payment proof must be JPG, PNG or WebP under 5 MB.");setSavingPayment(false);return;}
+      const path=user.id+"/wallet-proof-"+Date.now()+"."+paymentProof.name.split(".").pop();
+      const {error:uploadError}=await supabase.storage.from("cyberx-user-media").upload(path,paymentProof,{contentType:paymentProof.type,upsert:false});
+      if(uploadError){setStoreMessage(uploadError.message);setSavingPayment(false);return;}
+      const {data}=await supabase.storage.from("cyberx-user-media").createSignedUrl(path,2592000);proofUrl=data?.signedUrl||"";
+    }
+    const {error}=await supabase.rpc("create_wallet_deposit_request",{p_amount_inr:amount,p_utr:utr,p_proof_url:proofUrl||null});
+    if(error)setStoreMessage(error.message);
+    else {setStoreMessage("Deposit request submitted. Wallet balance will update only after the admin verifies the payment in the receiving account and approves it.");setPaymentReference("");setPaymentProof(null);await loadMyPayments();}
+    setSavingPayment(false);
+  }
+
   async function submitPayment(){
     if(!supabase||!selectedPlan){setStoreMessage("Choose a plan first.");return;}
     const utr=paymentReference.trim();
@@ -483,8 +460,10 @@ export default function HomePage() {
   async function loadMyPayments(){
     if(!supabase)return;
     const {data:{user}}=await supabase.auth.getUser();if(!user)return;
-    const {data}=await supabase.from("payment_records").select("id,provider_reference,amount_inr,status,created_at,admin_note,user_note").eq("user_id",user.id).order("created_at",{ascending:false}).limit(20);
+    const {data}=await supabase.from("payment_records").select("id,provider_reference,amount_inr,status,created_at,admin_note,user_note,payment_type").eq("user_id",user.id).order("created_at",{ascending:false}).limit(20);
     setMyPayments((data||[]) as typeof myPayments);
+    const {data:ledger}=await supabase.from("wallet_transactions").select("id,amount_inr,balance_after,transaction_type,description,created_at").eq("user_id",user.id).order("created_at",{ascending:false}).limit(30);
+    setWalletTransactions((ledger||[]) as typeof walletTransactions);
   }
 
   async function loadSupportTickets(){
@@ -577,7 +556,7 @@ export default function HomePage() {
         <section className="stats">
           <div className="stat-card"><div className="stat-icon"><LayoutGrid size={20}/></div><div><div className="stat-label">AVAILABLE TOOLS</div><div className="stat-value">{visibleTools.length.toString().padStart(2,"0")}</div></div></div>
           <div className="stat-card"><div className="stat-icon"><History size={20}/></div><div><div className="stat-label">YOUR SEARCHES</div><div className="stat-value">{history.length.toString().padStart(2,"0")}</div></div></div>
-          <div className="stat-card"><div className="stat-icon"><ShieldCheck size={20}/></div><div><div className="stat-label">PRIVACY MODE</div><div className="stat-value" style={{fontSize:17}}>Enabled</div></div></div><div className="stat-card"><div className="stat-icon"><Coins size={20}/></div><div><div className="stat-label">YOUR CREDITS</div><div className="stat-value">{credits}</div><small>{planName} plan</small></div></div>
+          <div className="stat-card"><div className="stat-icon"><ShieldCheck size={20}/></div><div><div className="stat-label">PRIVACY MODE</div><div className="stat-value" style={{fontSize:17}}>Enabled</div></div></div><div className="stat-card"><div className="stat-icon"><Coins size={20}/></div><div><div className="stat-label">WALLET BALANCE</div><div className="stat-value">₹{walletBalance.toFixed(2)}</div><small>Pay per successful query</small></div></div>
         </section>
         <div className="section-head"><h3>Quick Tools</h3><button className="text-link" onClick={()=>navTo("All Tools")}>View all <ArrowRight size={14} style={{verticalAlign:"middle"}}/></button></div>
         <div className="tool-grid">{visibleTools.slice(0,6).map((item)=>{const Icon=item.icon;return <button className="tool-card" key={item.key} onClick={()=>goTool(item.key)}><div className="tool-icon"><Icon size={21}/></div><strong>{item.title}</strong><small>{item.description}</small></button>})}</div>
@@ -594,7 +573,7 @@ export default function HomePage() {
 
       {page === "Tool" && <div className="content-panel">
         <div className="page-topline"><button className="back-btn" onClick={()=>navTo("All Tools")}><ArrowLeft size={19}/></button><div><strong>{selectedTool.title}</strong><div className="notice" style={{margin:0}}>{selectedTool.description}</div></div></div>
-        <div className="tool-icon" style={{width:58,height:58,marginTop:22}}><PageIcon size={28}/></div><p className="notice">{role==="admin"?"Admin queries are unlimited.":"Cost per successful query: "+(dbTools.find(item=>item.slug===toolSlug[tool]||item.slug===tool)?.credit_cost??1)+" credits."}</p>
+        <div className="tool-icon" style={{width:58,height:58,marginTop:22}}><PageIcon size={28}/></div><p className="notice">{role==="admin"?"Admin queries are unlimited.":"Cost per successful query: ₹"+Number(dbTools.find(item=>item.slug===toolSlug[tool]||item.slug===tool)?.price_inr??0).toFixed(2)+" · Wallet balance: ₹"+walletBalance.toFixed(2)}</p>
         <label className="field-label">{dbTools.find(item=>item.slug===tool)?.input_label || (tool==="ip"?"Enter public IP address":tool==="domain"||tool==="dns"?"Enter domain name":tool==="email"||tool==="breach"?"Enter email address":tool==="username"||tool==="social"?"Enter public username":tool==="image"?"Enter public image URL":"Enter website URL")}</label>
         <div className="form-row"><input className="field" value={query} onChange={(e)=>setQuery(e.target.value)} placeholder={tool==="ip"?"8.8.8.8":tool==="domain"||tool==="dns"?"example.com":tool==="email"||tool==="breach"?"name@example.com":tool==="username"||tool==="social"?"public_username": "https://example.com/image.jpg"} onKeyDown={(e)=>{if(e.key==="Enter")runTool();}}/><button className="primary-btn" disabled={busy||!query.trim()} onClick={runTool}>{busy?"Checking…":tool==="ip"||tool==="dns"?"Lookup":tool==="domain"||tool==="url"?"Analyze":"Check"} <ArrowRight size={15} style={{verticalAlign:"middle"}}/></button></div>
         {error && <div className="error">{error}</div>}
@@ -634,20 +613,23 @@ export default function HomePage() {
       {page === "Notifications" && <div className="content-panel" style={{maxWidth:"none"}}><div className="section-head" style={{marginTop:0}}><h3>Announcements & Notifications</h3><button className="text-link" onClick={()=>navTo("Home")}>Back to dashboard</button></div>{noticeLoading ? <div className="empty">Loading announcements…</div> : announcements.length ? <div className="tool-list">{announcements.map((item,i)=><div className="tool-row" key={i}><div className="tool-icon"><Bell size={18}/></div><span><strong>{item.title}</strong><small>{item.body} · {new Date(item.created_at).toLocaleString()}</small></span></div>)}</div> : <div className="empty">No new announcements.</div>}</div>}
 
       {page === "Store" && <div className="content-panel" style={{maxWidth:"none"}}>
-        <div className="section-head" style={{marginTop:0}}><h3><Store size={18} style={{verticalAlign:"middle",marginRight:8}}/>CyberX Store</h3><span className="notice">{gatewayEnabled?"Secure Razorpay checkout":"Manual payment review"}</span></div>
+        <div className="section-head" style={{marginTop:0}}><h3><Store size={18} style={{verticalAlign:"middle",marginRight:8}}/>Wallet & Deposits</h3><strong>Balance: ₹{walletBalance.toFixed(2)}</strong></div>
         {paymentQr&&<div style={{textAlign:"center",padding:16,background:"#fff",borderRadius:18,marginBottom:16}}><img src={paymentQr} alt="Admin payment QR" style={{width:220,maxWidth:"100%",height:"auto",objectFit:"contain"}}/><p style={{color:"#123",fontWeight:700}}>Scan to pay</p></div>}
         {paymentInstructions&&<p className="notice">{paymentInstructions}</p>}
-        <div className="tool-grid">{plans.map(plan=><button className="tool-card" key={plan.id} onClick={()=>setSelectedPlan(plan.id)} style={{outline:selectedPlan===plan.id?"2px solid #0872f9":undefined}}><div className="tool-icon"><Crown size={20}/></div><strong>{plan.name}</strong><div className="stat-value">₹{plan.price_inr}</div><small>{plan.credits} credits · {plan.duration_days} days</small><small>{plan.description}</small></button>)}</div>
-        {selectedPlan&&<><div style={{marginTop:18}}>{gatewayEnabled&&<><button className="primary-btn" disabled={savingPayment} onClick={()=>void startGatewayPayment(selectedPlan)}>Pay securely with Razorpay</button><p className="notice">Online payments are verified by the server before credits are activated.</p></>}</div><div style={{marginTop:18,padding:16,border:"1px solid #dce8f8",borderRadius:14,background:"#f7faff"}}>
-          <h3 style={{marginTop:0}}>Pay by QR and submit UTR</h3><p className="notice" style={{color:"#647794"}}>After scanning the QR and paying the exact plan amount, enter the UTR/reference shown by your payment app. Your plan remains pending until an administrator verifies and approves it.</p>
+        <div style={{padding:16,border:"1px solid #dce8f8",borderRadius:14,background:"#f7faff"}}>
+          <h3 style={{marginTop:0}}>Add money to wallet</h3>
+          <p className="notice" style={{color:"#647794"}}>Pay using the QR shown above. Enter the exact amount and UTR from your payment app. This is a manual review flow; your balance is not credited until an administrator confirms receipt in the bank/UPI account.</p>
+          <label className="field-label">Deposit amount (₹10–₹50,000)</label><input className="field" type="number" min="10" max="50000" step="0.01" value={depositAmount} onChange={e=>setDepositAmount(e.target.value)} placeholder="Enter amount in INR"/>
           <label className="field-label">UPI UTR / Transaction ID *</label><input className="field" value={paymentReference} onChange={e=>setPaymentReference(e.target.value)} placeholder="Enter UTR / transaction reference" maxLength={80}/>
           <label className="field-label">Payment screenshot (optional)</label><input className="field" type="file" accept="image/png,image/jpeg,image/webp" onChange={e=>setPaymentProof(e.target.files?.[0]||null)}/>
-          <button className="primary-btn" style={{marginTop:14}} disabled={savingPayment} onClick={()=>void submitPayment()}>{savingPayment?"Submitting…":"Submit for admin approval"}</button>
-        </div></>}
-        {storeMessage&&<p className={storeMessage.includes("successfully")?"notice":"error"}>{storeMessage}</p>}
-        <div className="section-head"><h3>My payment requests</h3><button className="text-link" onClick={()=>void loadMyPayments()}>Refresh</button></div>
-        {myPayments.length?<div className="tool-list">{myPayments.map(item=><div className="tool-row" key={item.id}><div className="tool-icon"><CreditCard size={18}/></div><span><strong>₹{item.amount_inr} · {item.status==="pending"?"Awaiting review":item.status==="success"?"Approved":"Rejected"}</strong><small>UTR: {item.provider_reference||"—"} · {new Date(item.created_at).toLocaleString()}</small>{item.admin_note&&<small>Admin note: {item.admin_note}</small>}</span></div>)}</div>:<div className="empty">No payment requests submitted yet.</div>}
-        <p className="notice">{gatewayEnabled?"Online gateway payments are verified server-side.":"Manual QR payments are reviewed by an administrator; do not submit the same UTR more than once."}</p>
+          <button className="primary-btn" style={{marginTop:14}} disabled={savingPayment} onClick={()=>void submitWalletDeposit()}>{savingPayment?"Submitting…":"Submit deposit for admin approval"}</button>
+        </div>
+        {storeMessage&&<p className={storeMessage.includes("submitted")?"notice":"error"}>{storeMessage}</p>}
+        <div className="section-head"><h3>My deposit requests</h3><button className="text-link" onClick={()=>void loadMyPayments()}>Refresh</button></div>
+        {myPayments.length?<div className="tool-list">{myPayments.map(item=><div className="tool-row" key={item.id}><div className="tool-icon"><CreditCard size={18}/></div><span><strong>₹{Number(item.amount_inr).toFixed(2)} · {item.status==="pending"?"Awaiting review":item.status==="success"?"Approved":"Rejected"}</strong><small>{item.payment_type==="wallet"?"Wallet deposit":"Plan payment"} · UTR: {item.provider_reference||"—"} · {new Date(item.created_at).toLocaleString()}</small>{item.admin_note&&<small>Admin note: {item.admin_note}</small>}</span></div>)}</div>:<div className="empty">No deposit requests submitted yet.</div>}
+        <div className="section-head"><h3>Wallet transaction history</h3><span className="notice">Latest 30</span></div>
+        {walletTransactions.length?<div className="tool-list">{walletTransactions.map(item=><div className="tool-row" key={item.id}><div className="tool-icon"><Coins size={18}/></div><span><strong>{item.amount_inr>=0?"+":"−"}₹{Math.abs(Number(item.amount_inr)).toFixed(2)} · {item.transaction_type.replace("_"," ")}</strong><small>{item.description} · Balance ₹{Number(item.balance_after).toFixed(2)} · {new Date(item.created_at).toLocaleString()}</small></span></div>)}</div>:<div className="empty">Your wallet transactions will appear here.</div>}
+        <p className="notice">Tool charges are deducted from this wallet only after a successful query. Each tool's INR price is controlled by the administrator.</p>
       </div>}
       {page === "Support" && <div className="content-panel" style={{maxWidth:"none"}}>
         <div className="section-head" style={{marginTop:0}}><h3><CircleHelp size={18} style={{verticalAlign:"middle",marginRight:8}}/>Support Center</h3><span className="notice">Admin assistance</span></div>
