@@ -24,7 +24,7 @@ export async function POST(request: Request) {
     const signupCredits = reward(settings[0].data()?.value, 3);
     const referredCredits = reward(settings[1].data()?.value, 7);
     const referrerCredits = reward(settings[2].data()?.value, 3);
-    const referralCode = String(profileSnap.data()?.pending_referral_code || "").trim().toUpperCase();
+    const referralCode = String(profileSnap.data()?.pending_referral_code || "") .trim();
     let referrerRef: DocumentReference | null = null;
     if (referralCode) {
       const match = await db.collection("profiles").where("referral_code","==",referralCode).limit(1).get();
