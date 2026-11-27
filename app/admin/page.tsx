@@ -42,7 +42,7 @@ const tableByKey: Partial<Record<SectionKey,string>> = {
   credits:"profiles",referrals:"referral_claims",settings:"site_settings",appearance:"site_settings",
   announcements:"announcements",api:"api_integrations",logs:"admin_audit_logs",developer:"developer_resources",support:"support_tickets"
 };
-const supabase=createClient();
+const backend=createClient();
 
 function valueText(value: unknown): string {
   if (value===null||value===undefined) return "—";
@@ -86,18 +86,18 @@ export default function AdminPage() {
   const [adminProfileSaving,setAdminProfileSaving]=useState(false);
 
   const verify=useCallback(async()=>{
-    if(!supabase){setChecking(false);return;}
+    if(!backend){setChecking(false);return;}
     setChecking(true);
-    const {data:{user},error:authError}=await supabase.auth.getUser();
+    const {data:{user},error:authError}=await backend.auth.getUser();
     if(authError){setAuthUser(null);setIsAdmin(false);setMessage(authError.message);setChecking(false);return;}
     setAuthUser(user);
     if(user){
       // First verify by immutable Auth user ID. If an older profile was created
       // before Auth identity linking, allow an exact verified-email match only
       // when that database profile is already explicitly admin + active.
-      let profileQuery=await supabase.from("profiles").select("id,email,role,status").eq("id",user.id).maybeSingle();
+      let profileQuery=await backend.from("profiles").select("id,email,role,status").eq("id",user.id).maybeSingle();
       if(!profileQuery.data && !profileQuery.error && user.email && user.email_confirmed_at){
-        profileQuery=await supabase.from("profiles").select("id,email,role,status").ilike("email",user.email).maybeSingle();
+        profileQuery=await backend.from("profiles").select("id,email,role,status").ilike("email",user.email).maybeSingle();
       }
       const profile=profileQuery.data;
       if(profileQuery.error){
@@ -118,8 +118,8 @@ export default function AdminPage() {
   },[]);
   useEffect(()=>{
     void verify();
-    if(!supabase)return;
-    const {data:{subscription}}=supabase.auth.onAuthStateChange((_event,session)=>{
+    if(!backend)return;
+    const {data:{subscription}}=backend.auth.onAuthStateChange((_event,session)=>{
       if(!session){
         setAuthUser(null);setIsAdmin(false);setChecking(false);
         return;
@@ -132,11 +132,11 @@ export default function AdminPage() {
 
   const active=sections.find(s=>s.key===section)!;
   const loadRows=useCallback(async()=>{
-    if(!supabase||!isAdmin)return;
+    if(!backend||!isAdmin)return;
     const table=tableByKey[section];
     if(!table){setRows([]);return;}
     setLoading(true);
-    let request=supabase.from(table).select("*").order(table==="site_settings"?"updated_at":"created_at",{ascending:false}).limit(100);
+    let request=backend.from(table).select("*").order(table==="site_settings"?"updated_at":"created_at",{ascending:false}).limit(100);
     if(section==="banned") request=request.in("status",["banned","suspended"]);
     const {data,error}=await request;
     if(error)setMessage(error.message);
@@ -146,23 +146,23 @@ export default function AdminPage() {
   useEffect(()=>{void loadRows();},[loadRows]);
 
   const loadCounts=useCallback(async()=>{
-    if(!supabase||!isAdmin)return;
+    if(!backend||!isAdmin)return;
     const tables=["profiles","tools","premium_plans","payment_records","support_tickets","referral_claims"];
     const results=await Promise.all(tables.map(async table=>{
-      const {count}=await supabase.from(table).select("*",{count:"exact",head:true});
+      const {count}=await backend.from(table).select("*",{count:"exact",head:true});
       return [table,count||0] as const;
     }));
     setCounts(Object.fromEntries(results));
   },[isAdmin]);
   useEffect(()=>{void loadCounts();},[loadCounts]);
   useEffect(()=>{
-    if(!supabase||!isAdmin)return;
-    void supabase.from("premium_plans").select("id,name,credits,duration_days").order("name").then(({data})=>setAdminPlans((data||[]) as typeof adminPlans));
+    if(!backend||!isAdmin)return;
+    void backend.from("premium_plans").select("id,name,credits,duration_days").order("name").then(({data})=>setAdminPlans((data||[]) as typeof adminPlans));
   },[isAdmin]);
   useEffect(()=>{
-    if(!supabase||!isAdmin)return;
+    if(!backend||!isAdmin)return;
     let active=true;
-    void supabase.from("site_settings").select("key,value").in("key",["default_signup_credits","referral_new_user_credits","referral_reward"]).then(({data,error})=>{
+    void backend.from("site_settings").select("key,value").in("key",["default_signup_credits","referral_new_user_credits","referral_reward"]).then(({data,error})=>{
       if(!active)return;
       if(error){setMessage("Could not load referral rewards: "+error.message);return;}
       const map=Object.fromEntries((data||[]).map(row=>[row.key,row.value])) as Record<string,unknown>;
@@ -172,9 +172,9 @@ export default function AdminPage() {
     return ()=>{active=false;};
   },[isAdmin]);
   useEffect(()=>{
-    if(!supabase||!isAdmin||!authUser)return;
+    if(!backend||!isAdmin||!authUser)return;
     let active=true;
-    void supabase.from("profiles").select("display_name,username,bio").eq("id",authUser.id).maybeSingle().then(({data,error})=>{
+    void backend.from("profiles").select("display_name,username,bio").eq("id",authUser.id).maybeSingle().then(({data,error})=>{
       if(!active)return;
       if(error){setMessage("Could not load admin profile: "+error.message);return;}
       setAdminProfileDraft({display_name:String(data?.display_name||""),username:String(data?.username||""),bio:String(data?.bio||"")});
@@ -183,17 +183,17 @@ export default function AdminPage() {
   },[isAdmin,authUser?.id]);
 
   async function login(){
-    if(!supabase){setMessage("Firebase is not configured. Add the two NEXT_PUBLIC Firebase variables.");return;}
+    if(!backend){setMessage("Firebase is not configured. Add the two NEXT_PUBLIC Firebase variables.");return;}
     setMessage("");
-    const {error}=await supabase.auth.signInWithPassword({email,password});
+    const {error}=await backend.auth.signInWithPassword({email,password});
     if(error)setMessage(error.message);
     else await verify();
   }
   async function oauthLogin(provider:"google"|"github"){
-    if(!supabase){setMessage("Firebase is not configured.");return;}
+    if(!backend){setMessage("Firebase is not configured.");return;}
     setMessage("");
     const redirectTo=window.location.origin+"/auth/callback?next=%2Fadmin";
-    const {error}=await supabase.auth.signInWithOAuth({
+    const {error}=await backend.auth.signInWithOAuth({
       provider,
       options:{
         redirectTo,
@@ -202,20 +202,20 @@ export default function AdminPage() {
     });
     if(error)setMessage(error.message);
   }
-  async function logout(){if(supabase)await supabase.auth.signOut();setAuthUser(null);setIsAdmin(false);setMessage("");}
+  async function logout(){if(backend)await backend.auth.signOut();setAuthUser(null);setIsAdmin(false);setMessage("");}
   async function saveAdminProfile(){
-    if(!supabase||!authUser)return;
+    if(!backend||!authUser)return;
     const display_name=adminProfileDraft.display_name.trim();
     const username=adminProfileDraft.username.trim();
     if(!display_name){setMessage("Enter your display name.");return;}
     if(username&&!/^[a-zA-Z0-9_]{3,24}$/.test(username)){setMessage("Username must be 3–24 letters, numbers or underscores.");return;}
     setAdminProfileSaving(true);
-    const {error}=await supabase.from("profiles").update({display_name,username:username||null,bio:adminProfileDraft.bio.trim(),updated_at:new Date().toISOString()}).eq("id",authUser.id);
+    const {error}=await backend.from("profiles").update({display_name,username:username||null,bio:adminProfileDraft.bio.trim(),updated_at:new Date().toISOString()}).eq("id",authUser.id);
     setMessage(error?error.message:"Administrator profile updated.");
     setAdminProfileSaving(false);
   }
   async function saveReferralSettings(){
-    if(!supabase||!authUser)return;
+    if(!backend||!authUser)return;
     const signup=Number(referralRewardForm.signup),referred=Number(referralRewardForm.referred),referrer=Number(referralRewardForm.referrer);
     if(![signup,referred,referrer].every(n=>Number.isSafeInteger(n)&&n>=0&&n<=2147483647)){setMessage("Referral rewards must be whole numbers from 0 to 2,147,483,647.");return;}
     setReferralSettingsSaving(true);
@@ -225,13 +225,13 @@ export default function AdminPage() {
       {key:"referral_new_user_credits",value:{credits:referred},updated_by:authUser.id,updated_at},
       {key:"referral_reward",value:{credits:referrer},updated_by:authUser.id,updated_at}
     ];
-    const {error}=await supabase.from("site_settings").upsert(values,{onConflict:"key"});
+    const {error}=await backend.from("site_settings").upsert(values,{onConflict:"key"});
     setMessage(error?error.message:"Signup and referral rewards saved.");
     setReferralSettingsSaving(false);
   }
 
   async function saveRecord(){
-    if(!supabase||!active.table)return;
+    if(!backend||!active.table)return;
     setSaving(true);setMessage("");
     let payload:Row={};
     if(section==="tools") {
@@ -263,28 +263,28 @@ export default function AdminPage() {
       try{parsed=JSON.parse(form.value||"{}");}catch{setMessage("Value must be valid JSON.");setSaving(false);return;}
       payload={key:form.name||"",value:parsed,updated_by:authUser?.id,updated_at:new Date().toISOString()};
     } else {setSaving(false);return;}
-    const {error}=await (section==="settings"||section==="appearance" ? supabase.from(active.table).upsert(payload) : section==="tools"&&editingToolId ? supabase.from("tools").update(payload).eq("id",editingToolId) : supabase.from(active.table).insert(payload));
+    const {error}=await (section==="settings"||section==="appearance" ? backend.from(active.table).upsert(payload) : section==="tools"&&editingToolId ? backend.from("tools").update(payload).eq("id",editingToolId) : backend.from(active.table).insert(payload));
     if(error)setMessage(error.message);
     else {setForm({});setEditingToolId("");setMessage("Saved successfully.");await loadRows();await loadCounts();}
     setSaving(false);
   }
 
   async function updateUser(id:string){
-    if(!supabase)return;
+    if(!backend)return;
     const edit=userEdits[id]||{role:"user",status:"active",delta:"0",reason:"Admin adjustment"};
-    const {error}=await supabase.rpc("admin_update_user",{target_user_id:id,new_role:edit.role,new_status:edit.status,credit_delta:Number(edit.delta||0),credit_reason:edit.reason||"Admin adjustment"});
+    const {error}=await backend.rpc("admin_update_user",{target_user_id:id,new_role:edit.role,new_status:edit.status,credit_delta:Number(edit.delta||0),credit_reason:edit.reason||"Admin adjustment"});
     if(error)setMessage(error.message);
     else {setMessage("User account updated.");await loadRows();await loadCounts();}
   }
   async function clearUserCredits(row:Row){
-    if(!supabase)return;
+    if(!backend)return;
     const id=String(row.id||"");
     const current=Number(row.credits||0);
     if(!id||!Number.isSafeInteger(current)||current<0){setMessage("Could not read this user's current credit balance.");return;}
     if(current===0){setMessage("This user already has 0 credits.");return;}
     const identity=String(row.email||row.username||id);
     if(!window.confirm("Clear all "+current+" credits for "+identity+"? This will be recorded in the credit history."))return;
-    const {error}=await supabase.rpc("admin_update_user",{
+    const {error}=await backend.rpc("admin_update_user",{
       target_user_id:id,new_role:null,new_status:null,credit_delta:-current,
       credit_reason:"Administrator cleared user credits"
     });
@@ -292,75 +292,75 @@ export default function AdminPage() {
     if(!error){await loadRows();await loadCounts();}
   }
   async function updateStatus(id:string,status:string){
-    if(!supabase)return;
-    const {error}=await supabase.from("support_tickets").update({status,updated_at:new Date().toISOString()}).eq("id",id);
+    if(!backend)return;
+    const {error}=await backend.from("support_tickets").update({status,updated_at:new Date().toISOString()}).eq("id",id);
     setMessage(error?error.message:"Ticket updated.");if(!error)await loadRows();
   }
   async function replyToTicket(id:string){
-    if(!supabase)return;
+    if(!backend)return;
     const reply=(ticketReplies[id]||"").trim();
     if(reply.length<2){setMessage("Write a reply before sending.");return;}
-    const {error}=await supabase.from("support_tickets").update({admin_reply:reply.slice(0,5000),status:"in_progress",updated_at:new Date().toISOString()}).eq("id",id);
+    const {error}=await backend.from("support_tickets").update({admin_reply:reply.slice(0,5000),status:"in_progress",updated_at:new Date().toISOString()}).eq("id",id);
     setMessage(error?error.message:"Reply sent to the user.");
     if(!error){setTicketReplies(v=>({...v,[id]:""}));await loadRows();}
   }
   async function bulkGrantCredits(){
-    if(!supabase)return;
+    if(!backend)return;
     const delta=Number(bulkCreditDelta);
     if(!Number.isInteger(delta)||delta===0||Math.abs(delta)>100000){setMessage("Enter a whole-number credit amount between -100000 and 100000, excluding zero.");return;}
     if(!window.confirm((delta>0?"Add ":"Deduct ")+Math.abs(delta)+" credits for every user?"))return;
     setBulkCreditBusy(true);
-    const {data,error}=await supabase.rpc("admin_bulk_grant_credits",{p_credit_delta:delta,p_reason:bulkCreditReason.trim()||"Administrator bulk credit grant",p_target_user_id:null});
+    const {data,error}=await backend.rpc("admin_bulk_grant_credits",{p_credit_delta:delta,p_reason:bulkCreditReason.trim()||"Administrator bulk credit grant",p_target_user_id:null});
     setMessage(error?error.message:"Credits updated for "+String(data??0)+" users.");
     if(!error){await loadCounts();if(section==="users"||section==="credits")await loadRows();}
     setBulkCreditBusy(false);
   }
   async function assignPlanToUser(userId:string){
-    if(!supabase)return;
+    if(!backend)return;
     const planId=planEdits[userId];
     if(!planId){setMessage("Choose a plan first.");return;}
-    const {error}=await supabase.rpc("admin_assign_plan",{p_target_user_id:userId,p_plan_id:planId,p_add_credits:true});
+    const {error}=await backend.rpc("admin_assign_plan",{p_target_user_id:userId,p_plan_id:planId,p_add_credits:true});
     setMessage(error?error.message:"Plan assigned and its credits added.");
     if(!error){setPlanEdits(v=>({...v,[userId]:""}));await loadRows();}
   }
   async function publishAnnouncement(id:string,published:boolean){
-    if(!supabase)return;
-    const {error}=await supabase.from("announcements").update({is_published:published,active:published}).eq("id",id);
+    if(!backend)return;
+    const {error}=await backend.from("announcements").update({is_published:published,active:published}).eq("id",id);
     setMessage(error?error.message:"Announcement updated.");if(!error)await loadRows();
   }
   async function editTool(row:Row){setEditingToolId(String(row.id));const config=(row.config&&typeof row.config==="object"?row.config:{}) as Record<string,string>;setForm({name:valueText(row.name),description:valueText(row.description),category:valueText(row.category),url:config.api_url||"",icon:config.icon||"Wrench",handler:valueText(row.handler),credit_cost:valueText(row.credit_cost),price_inr:valueText(row.price_inr??0),input_label:valueText(row.input_label),enabled:String(Boolean(row.enabled))});setMessage("Editing "+valueText(row.name));}
-  async function deleteTool(id:string){if(!supabase||!window.confirm("Delete this tool permanently?"))return;const {error}=await supabase.from("tools").delete().eq("id",id);setMessage(error?error.message:"Tool deleted.");if(!error){if(editingToolId===id){setEditingToolId("");setForm({});}await loadRows();await loadCounts();}}
+  async function deleteTool(id:string){if(!backend||!window.confirm("Delete this tool permanently?"))return;const {error}=await backend.from("tools").delete().eq("id",id);setMessage(error?error.message:"Tool deleted.");if(!error){if(editingToolId===id){setEditingToolId("");setForm({});}await loadRows();await loadCounts();}}
   async function toggleTool(id:string,enabled:boolean){
-    if(!supabase)return;
-    const {error}=await supabase.from("tools").update({enabled}).eq("id",id);
+    if(!backend)return;
+    const {error}=await backend.from("tools").update({enabled}).eq("id",id);
     setMessage(error?error.message:"Tool status updated.");if(!error)await loadRows();
   }
   async function updateRow(table:string,id:string,patch:Row,success:string){
-    if(!supabase)return;
-    const {error}=await supabase.from(table).update(patch).eq("id",id);
+    if(!backend)return;
+    const {error}=await backend.from(table).update(patch).eq("id",id);
     setMessage(error?error.message:success);if(!error)await loadRows();
   }
 
 
   async function saveManualPaymentSettings(){
-    if(!supabase)return;
+    if(!backend)return;
     setGatewayMessage("");
     const values=[
       {key:"payment_instructions",value:paymentInstructionsDraft,updated_by:authUser?.id,updated_at:new Date().toISOString()}
     ];
-    const {error}=await supabase.from("site_settings").upsert(values,{onConflict:"key"});
+    const {error}=await backend.from("site_settings").upsert(values,{onConflict:"key"});
     setGatewayMessage(error?error.message:"Manual payment instructions saved.");
   }
 
   async function uploadPaymentQr(file:File){
-    if(!supabase)return;
+    if(!backend)return;
     if(!["image/png","image/jpeg","image/webp"].includes(file.type)||file.size>2*1024*1024){setGatewayMessage("QR must be PNG, JPG or WebP and no larger than 2 MB.");return;}
     setQrUploading(true);setGatewayMessage("");
     const reader=new FileReader();
     reader.onload=async()=>{
       const value=String(reader.result||"");
       if(!value.startsWith("data:image/")){setGatewayMessage("Could not read the QR image.");setQrUploading(false);return;}
-      const {error}=await supabase!.from("site_settings").upsert({key:"payment_qr_url",value,updated_by:authUser?.id,updated_at:new Date().toISOString()},{onConflict:"key"});
+      const {error}=await backend!.from("site_settings").upsert({key:"payment_qr_url",value,updated_by:authUser?.id,updated_at:new Date().toISOString()},{onConflict:"key"});
       setGatewayMessage(error?error.message:"Payment QR uploaded and published to the Store.");
       setQrUploading(false);
     };
@@ -378,7 +378,7 @@ export default function AdminPage() {
   const addable=["tools","plans","announcements","api","developer","settings","appearance"].includes(section);
 
   if(checking)return <div className="admin-loading"><div className="admin-spinner"/>Checking admin access…</div>;
-  if(!supabase)return <div className="admin-auth"><div className="admin-auth-card"><div className="admin-logo"><Shield size={30}/></div><h1>Cyber<span>X</span> OSINT</h1><p>Admin panel configuration required</p><div className="admin-warning">Add NEXT_PUBLIC_FIREBASE_* settings in your hosting environment, then redeploy.</div><a href="https://github.com/Xcyberking/CyberOsintIndia" target="_blank" rel="noreferrer">Open project repository <ArrowRight size={15}/></a></div></div>;
+  if(!backend)return <div className="admin-auth"><div className="admin-auth-card"><div className="admin-logo"><Shield size={30}/></div><h1>Cyber<span>X</span> OSINT</h1><p>Admin panel configuration required</p><div className="admin-warning">Add NEXT_PUBLIC_FIREBASE_* settings in your hosting environment, then redeploy.</div><a href="https://github.com/Xcyberking/CyberOsintIndia" target="_blank" rel="noreferrer">Open project repository <ArrowRight size={15}/></a></div></div>;
   if(!authUser||!isAdmin)return <div className="admin-auth"><div className="admin-auth-card"><div className="admin-logo"><Shield size={30}/></div><h1>Cyber<span>X</span> OSINT</h1><p>{authUser?"This account does not have active admin access.":"Secure administrator sign in"}</p>{!authUser&&<><label>Email address</label><input value={email} onChange={e=>setEmail(e.target.value)} type="email" placeholder="admin@example.com"/><label>Password</label><input value={password} onChange={e=>setPassword(e.target.value)} type="password" placeholder="Your password"/><button className="admin-primary" onClick={login}><LockKeyhole size={16}/> Admin Login</button><div className="admin-oauth-divider"><span>OR CONTINUE WITH</span></div><div className="admin-oauth-grid"><button type="button" onClick={()=>void oauthLogin("google")}><Chrome size={16}/> Google</button><button type="button" onClick={()=>void oauthLogin("github")}><Github size={16}/> GitHub</button></div></>}{message&&<div className="admin-message">{message}</div>}{authUser&&!isAdmin&&<button className="admin-primary" onClick={()=>void logout()}><LogOut size={16}/> Sign out / switch account</button>}<div className="admin-auth-note">OAuth login is real Firebase Auth. Only an account whose database profile has role=admin and status=active can enter this panel.</div></div></div>;
 
   const navGroups=[
@@ -396,7 +396,7 @@ export default function AdminPage() {
     if(section==="tools")return <div className="admin-records">{filtered.map(row=>{const cfg=(row.config&&typeof row.config==="object"?row.config:{}) as Record<string,string>;return <div className="admin-record" key={String(row.id)}><div className="admin-record-icon"><Wrench size={18}/></div><div className="admin-record-main"><strong>{valueText(row.name)}</strong><small>{valueText(row.description)} · ₹{Number(row.price_inr||0).toFixed(2)} per successful query</small><small className="mono">{cfg.api_url||"No API URL configured"}</small></div><label className="admin-switch"><input type="checkbox" checked={Boolean(row.enabled)} onChange={e=>toggleTool(String(row.id),e.target.checked)}/><span/></label><button className="admin-small" onClick={()=>void editTool(row)}>Edit</button><button className="admin-small" onClick={()=>void deleteTool(String(row.id))}>Delete</button></div>})}</div>;
     if(section==="announcements")return <div className="admin-records">{filtered.map(row=><div className="admin-record" key={String(row.id)}><div className="admin-record-icon"><Megaphone size={18}/></div><div className="admin-record-main"><strong>{valueText(row.title)}</strong><small>{valueText(row.body)}</small></div><button className="admin-small" onClick={()=>publishAnnouncement(String(row.id),!Boolean(row.is_published))}>{row.is_published?"Unpublish":"Publish"}</button></div>)}</div>;
     if(section==="plans")return <div className="admin-records">{filtered.map(row=><div className="admin-record" key={String(row.id)}><div className="admin-record-icon"><Crown size={18}/></div><div className="admin-record-main"><strong>{valueText(row.name)} · ₹{valueText(row.price_inr)}</strong><small>{valueText(row.credits)} credits · {valueText(row.duration_days)} days · {valueText(row.description)}</small></div><label className="admin-switch"><input type="checkbox" checked={Boolean(row.is_active)} onChange={e=>updateRow("premium_plans",String(row.id),{is_active:e.target.checked},"Plan status updated.")}/><span/></label></div>)}</div>;
-    if(section==="payments")return <div className="admin-records">{filtered.map(row=><div className="admin-record" key={String(row.id)}><div className="admin-record-icon"><CreditCard size={18}/></div><div className="admin-record-main"><strong>₹{valueText(row.amount_inr)} · {valueText(row.provider)} · {valueText(row.status)}</strong><small>User: {String(row.user_id||"").slice(0,12)}… · Plan: {valueText(row.user_note||row.plan_id)}</small><small>UTR / reference: {valueText(row.provider_reference)} · {dateText(row.created_at)}</small>{Boolean(row.proof_url)&&<a href={String(row.proof_url)} target="_blank" rel="noreferrer">Open payment proof</a>}{Boolean(row.admin_note)&&<small>Admin note: {valueText(row.admin_note)}</small>}</div>{row.status==="pending"?<div className="admin-inline"><button className="admin-small" onClick={async()=>{if(!window.confirm("Confirm you checked the payment in the bank/UPI statement and received the money?"))return;const {error}=await supabase!.rpc("admin_review_payment",{p_payment_id:String(row.id),p_approve:true,p_admin_note:null});setMessage(error?error.message:(row.payment_type==="wallet"?"Wallet deposit approved and balance updated.":"Payment approved; plan and credits applied."));if(!error){await loadRows();await loadCounts();}}}>Approve</button><button className="admin-small" onClick={async()=>{const note=window.prompt("Reason for rejection (optional):")||"";const {error}=await supabase!.rpc("admin_review_payment",{p_payment_id:String(row.id),p_approve:false,p_admin_note:note});setMessage(error?error.message:"Payment rejected.");if(!error)await loadRows();}}>Reject</button></div>:<span className="admin-tag">{valueText(row.status)}</span>}</div>)}</div>;
+    if(section==="payments")return <div className="admin-records">{filtered.map(row=><div className="admin-record" key={String(row.id)}><div className="admin-record-icon"><CreditCard size={18}/></div><div className="admin-record-main"><strong>₹{valueText(row.amount_inr)} · {valueText(row.provider)} · {valueText(row.status)}</strong><small>User: {String(row.user_id||"").slice(0,12)}… · Plan: {valueText(row.user_note||row.plan_id)}</small><small>UTR / reference: {valueText(row.provider_reference)} · {dateText(row.created_at)}</small>{Boolean(row.proof_url)&&<a href={String(row.proof_url)} target="_blank" rel="noreferrer">Open payment proof</a>}{Boolean(row.admin_note)&&<small>Admin note: {valueText(row.admin_note)}</small>}</div>{row.status==="pending"?<div className="admin-inline"><button className="admin-small" onClick={async()=>{if(!window.confirm("Confirm you checked the payment in the bank/UPI statement and received the money?"))return;const {error}=await backend!.rpc("admin_review_payment",{p_payment_id:String(row.id),p_approve:true,p_admin_note:null});setMessage(error?error.message:(row.payment_type==="wallet"?"Wallet deposit approved and balance updated.":"Payment approved; plan and credits applied."));if(!error){await loadRows();await loadCounts();}}}>Approve</button><button className="admin-small" onClick={async()=>{const note=window.prompt("Reason for rejection (optional):")||"";const {error}=await backend!.rpc("admin_review_payment",{p_payment_id:String(row.id),p_approve:false,p_admin_note:note});setMessage(error?error.message:"Payment rejected.");if(!error)await loadRows();}}>Reject</button></div>:<span className="admin-tag">{valueText(row.status)}</span>}</div>)}</div>;
     if(section==="referrals")return <div className="admin-records">{filtered.map(row=><div className="admin-record" key={String(row.id)}><div className="admin-record-icon"><Users size={18}/></div><div className="admin-record-main"><strong>{valueText(row.referrer_id)} → {valueText(row.referred_id)}</strong><small>Reward: {valueText(row.reward)} credits · {dateText(row.created_at)}</small></div><select value={valueText(row.status)} onChange={e=>updateRow("referral_claims",String(row.id),{status:e.target.value},"Referral status updated. Credit reward is not automatically issued by this status change.")}><option value="pending">Pending</option><option value="qualified">Qualified</option><option value="rejected">Rejected</option></select></div>)}</div>;
     if(section==="api")return <div className="admin-records">{filtered.map(row=><div className="admin-record" key={String(row.id)}><div className="admin-record-icon"><Link2 size={18}/></div><div className="admin-record-main"><strong>{valueText(row.name)}</strong><small>{valueText(row.base_url)} · {valueText(row.description)}</small></div><label className="admin-switch"><input type="checkbox" checked={Boolean(row.is_enabled)} onChange={e=>updateRow("api_integrations",String(row.id),{is_enabled:e.target.checked},"Integration status updated.")}/><span/></label></div>)}</div>;
     if(section==="developer")return <div className="admin-records">{filtered.map(row=><div className="admin-record" key={String(row.id)}><div className="admin-record-icon"><BookOpen size={18}/></div><div className="admin-record-main"><strong>{valueText(row.title)}</strong><small>{valueText(row.resource_type)} · {valueText(row.url)} · {valueText(row.description)}</small></div><label className="admin-switch"><input type="checkbox" checked={Boolean(row.is_published)} onChange={e=>updateRow("developer_resources",String(row.id),{is_published:e.target.checked},"Resource visibility updated.")}/><span/></label></div>)}</div>;
@@ -420,7 +420,7 @@ export default function AdminPage() {
       {section==="referrals"&&<section className="admin-panel" style={{marginBottom:18}}><div className="admin-panel-head"><div><h3><Users size={18}/> Referral Reward Settings</h3><small>Set signup and referral credits. Rewards are issued once after email confirmation.</small></div></div><div className="admin-form-grid"><label>Normal signup credits<input type="number" min="0" max="2147483647" step="1" value={referralRewardForm.signup} onChange={e=>setReferralRewardForm(v=>({...v,signup:e.target.value}))}/></label><label>Referred user's credits<input type="number" min="0" max="2147483647" step="1" value={referralRewardForm.referred} onChange={e=>setReferralRewardForm(v=>({...v,referred:e.target.value}))}/></label><label>Referrer reward credits<input type="number" min="0" max="2147483647" step="1" value={referralRewardForm.referrer} onChange={e=>setReferralRewardForm(v=>({...v,referrer:e.target.value}))}/></label></div><div className="admin-form-foot"><button className="admin-primary" disabled={referralSettingsSaving} onClick={()=>void saveReferralSettings()}>{referralSettingsSaving?"Saving…":"Save referral rewards"}</button></div><p className="admin-hint">New users without a referral link receive the normal signup amount. Users who register through a valid referral link receive the referred-user amount, and the owner of that link receives the referrer amount.</p></section>}
       {section==="analytics"&&<div className="admin-stat-grid">{Object.entries(counts).map(([key,value])=><div className="admin-stat" key={key}><div><small>{key.replaceAll("_"," ")}</small><b>{value.toLocaleString()}</b></div><span><Activity size={21}/></span></div>)}</div>}
       {section==="system"&&<div className="admin-panel"><h3><Server size={18}/> Runtime information</h3><div className="admin-info-grid"><div><small>Framework</small><b>Next.js 15</b></div><div><small>Runtime</small><b>Node.js</b></div><div><small>Database</small><b>Firebase PostgreSQL</b></div><div><small>Authentication</small><b>Firebase Auth</b></div><div><small>Admin authorization</small><b>Database role + RLS</b></div><div><small>Environment</small><b>{process.env.NODE_ENV}</b></div></div><p className="admin-hint">This panel reports configured integrations only; it does not invent CPU, storage or uptime metrics that the hosting provider has not supplied.</p></div>}
-      {section==="backup"&&<div className="admin-panel"><h3><Database size={18}/> Backup & Restore</h3><div className="admin-warning">Database backups are controlled by your Firebase project and plan. This page does not claim to create a backup from the browser.</div><ol className="admin-steps"><li>Open your Firebase project dashboard.</li><li>Use Database backups / Point-in-Time Recovery if enabled on your plan.</li><li>Before restoring, verify the target project and the backup timestamp.</li><li>After restore, run the app build and verify Auth, RLS and table access.</li></ol><a className="admin-primary-link" href="https://supabase.com/dashboard/projects" target="_blank" rel="noreferrer">Open Firebase dashboard <ArrowRight size={15}/></a></div>}
+      {section==="backup"&&<div className="admin-panel"><h3><Database size={18}/> Backup & Restore</h3><div className="admin-warning">Database backups are controlled by your Firebase project and plan. This page does not claim to create a backup from the browser.</div><ol className="admin-steps"><li>Open your Firebase project dashboard.</li><li>Use Database backups / Point-in-Time Recovery if enabled on your plan.</li><li>Before restoring, verify the target project and the backup timestamp.</li><li>After restore, run the app build and verify Auth, RLS and table access.</li></ol><a className="admin-primary-link" href="https://backend.com/dashboard/projects" target="_blank" rel="noreferrer">Open Firebase dashboard <ArrowRight size={15}/></a></div>}
       {section==="about"&&<div className="admin-panel"><div className="admin-about-logo"><Shield size={42}/></div><h2>CyberX OSINT</h2><p>Public-source research workspace with an Android-first interface and database-protected administration.</p><div className="admin-warning">Safety scope: public technical metadata and public links only. No private-person tracking, account intrusion, password discovery, leaked personal-data search, or precise location claims.</div><a href="https://github.com/Xcyberking/CyberOsintIndia" target="_blank" rel="noreferrer">Repository <ArrowRight size={15}/></a></div>}
       {section==="settings"&&<section className="admin-panel" style={{marginBottom:18}}>
         <div className="admin-panel-head"><div><h3><CreditCard size={18}/> Manual UPI / QR Payments</h3><small>Razorpay is not used. Admin approval is required for every wallet deposit.</small></div><span className="admin-tag">Manual verification</span></div>
