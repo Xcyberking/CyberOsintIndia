@@ -370,6 +370,11 @@ export default function AdminPage() {
   }
 
   const filtered=useMemo(()=>rows.filter(row=>JSON.stringify(row).toLowerCase().includes(search.toLowerCase())),[rows,search]);
+  useEffect(()=>{
+    if(section!=="settings")return;
+    const saved=rows.find(row=>row.key==="payment_instructions");
+    if(saved)setPaymentInstructionsDraft(String(saved.value??"").replace(/^"|"$/g,""));
+  },[section,rows]);
   const recordCount=Object.values(counts).reduce((a,b)=>a+b,0);
   const addable=["tools","plans","announcements","api","developer","settings","appearance"].includes(section);
 
