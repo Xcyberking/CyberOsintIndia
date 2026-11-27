@@ -35,10 +35,6 @@
     "**/*.tsx"
   ],
   "exclude": [
-    "node_modules",
-    "supabase/functions",
-    "supabase/functions/**/*",
-    "**/supabase/functions/**",
-    "**/supabase/functions/**/*.ts"
+    "node_modules"
   ]
 }
