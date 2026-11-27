@@ -119,7 +119,7 @@ export default function AdminPage() {
   useEffect(()=>{
     void verify();
     if(!backend)return;
-    const {data:{subscription}}=backend.auth.onAuthStateChange((_event,session)=>{
+    const {data:{subscription}}=backend.auth.onAuthStateChange((_event:string,session:{user:any}|null)=>{
       if(!session){
         setAuthUser(null);setIsAdmin(false);setChecking(false);
         return;
@@ -157,15 +157,15 @@ export default function AdminPage() {
   useEffect(()=>{void loadCounts();},[loadCounts]);
   useEffect(()=>{
     if(!backend||!isAdmin)return;
-    void backend.from("premium_plans").select("id,name,credits,duration_days").order("name").then(({data})=>setAdminPlans((data||[]) as typeof adminPlans));
+    void backend.from("premium_plans").select("id,name,credits,duration_days").order("name").then(({data}:{data:unknown[]|null})=>setAdminPlans((data||[]) as typeof adminPlans));
   },[isAdmin]);
   useEffect(()=>{
     if(!backend||!isAdmin)return;
     let active=true;
-    void backend.from("site_settings").select("key,value").in("key",["default_signup_credits","referral_new_user_credits","referral_reward"]).then(({data,error})=>{
+    void backend.from("site_settings").select("key,value").in("key",["default_signup_credits","referral_new_user_credits","referral_reward"]).then(({data,error}:{data:Array<{key:string;value:unknown}>|null;error:{message:string}|null})=>{
       if(!active)return;
       if(error){setMessage("Could not load referral rewards: "+error.message);return;}
-      const map=Object.fromEntries((data||[]).map(row=>[row.key,row.value])) as Record<string,unknown>;
+      const map=Object.fromEntries((data||[]).map((row:{key:string;value:unknown})=>[row.key,row.value])) as Record<string,unknown>;
       const read=(key:string,fallback:number)=>{const raw=map[key] as {credits?:unknown}|undefined;const n=Number(raw?.credits??fallback);return Number.isSafeInteger(n)&&n>=0?n:fallback;};
       setReferralRewardForm({signup:String(read("default_signup_credits",3)),referred:String(read("referral_new_user_credits",7)),referrer:String(read("referral_reward",3))});
     });
@@ -174,7 +174,7 @@ export default function AdminPage() {
   useEffect(()=>{
     if(!backend||!isAdmin||!authUser)return;
     let active=true;
-    void backend.from("profiles").select("display_name,username,bio").eq("id",authUser.id).maybeSingle().then(({data,error})=>{
+    void backend.from("profiles").select("display_name,username,bio").eq("id",authUser.id).maybeSingle().then(({data,error}:{data:Record<string,unknown>|null;error:{message:string}|null})=>{
       if(!active)return;
       if(error){setMessage("Could not load admin profile: "+error.message);return;}
       setAdminProfileDraft({display_name:String(data?.display_name||""),username:String(data?.username||""),bio:String(data?.bio||"")});
