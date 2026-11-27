@@ -10,6 +10,15 @@ alter table public.tools
   check (price_inr >= 0);
 
 alter table public.payment_records
+  add column if not exists plan_id uuid references public.premium_plans(id) on delete set null,
+  add column if not exists proof_url text,
+  add column if not exists user_note text,
+  add column if not exists reviewed_by uuid references auth.users(id) on delete set null,
+  add column if not exists reviewed_at timestamptz,
+  add column if not exists paid_at timestamptz,
+  add column if not exists admin_note text;
+
+alter table public.payment_records
   add column if not exists payment_type text not null default 'plan';
 
 alter table public.payment_records
