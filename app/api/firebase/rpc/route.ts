@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
 import { adminAuth, adminDb, requireAdmin, verifyBearer } from "@/lib/firebase/admin";
-import { FieldValue } from "firebase-admin/firestore";
 
 export const runtime = "nodejs";
 const json = (data: unknown, status = 200) => NextResponse.json(data, { status });
@@ -90,8 +89,7 @@ export async function POST(request: Request) {
         await db.collection("credit_transactions").add({ user_id: id, delta, reason: String(args.credit_reason || "Admin adjustment"), created_at: new Date().toISOString() });
       }
       await ref.update(patch);
-      if (args.new_role === "admin") await adminAuth().setCustomUserClaims(id, { admin: true });
-      if (args.new_role === "user") await adminAuth().setCustomUserClaims(id, { admin: false });
+      if (args.new_role) await adminAuth().setCustomUserClaims(id, { ...(await adminAuth().getUser(id)).customClaims, admin: args.new_role === "admin" });
       return json({ data: true });
     }
     if (name === "admin_bulk_grant_credits") {
