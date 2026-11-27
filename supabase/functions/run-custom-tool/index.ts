@@ -46,7 +46,7 @@ Deno.serve(async (req: Request) => {
     const slug = String(body.slug || "").trim();
     const query = String(body.query || "").trim();
     if (!slug || !query || query.length > 500) return reply({ error: "Enter a query between 1 and 500 characters." }, 400);
-    const { data: tool, error: toolError } = await admin.from("tools").select("slug,name,enabled,config").eq("slug", slug).maybeSingle();
+    const { data: tool, error: toolError } = await admin.from("tools").select("slug,name,enabled,price_inr,config").eq("slug", slug).maybeSingle();
     if (toolError) throw toolError;
     if (!tool || !tool.enabled) return reply({ error: "This tool is currently unavailable." }, 404);
     const config = tool.config && typeof tool.config === "object" ? tool.config as Record<string, unknown> : {};
@@ -65,9 +65,9 @@ Deno.serve(async (req: Request) => {
     let payload: unknown;
     try { payload = JSON.parse(raw); } catch { payload = { response: raw }; }
     if (!response.ok) return reply({ error: "Configured API returned HTTP " + response.status + ".", details: payload }, 502);
-    const { data: remaining, error: creditError } = await auth.rpc("consume_tool_credit", { p_tool_slug: slug, p_query: query });
+    const { data: remaining, error: creditError } = await auth.rpc("consume_tool_wallet", { p_tool_slug: slug });
     if (creditError) return reply({ error: creditError.message }, creditError.message.includes("Insufficient") ? 402 : 400);
-    return reply({ ok: true, tool: tool.name, result: payload, remaining_credits: remaining });
+    return reply({ ok: true, tool: tool.name, result: payload, remaining_wallet: remaining });
   } catch (error) {
     console.error("run-custom-tool error", error);
     return reply({ error: error instanceof Error ? error.message : "Unexpected API error." }, 500);
