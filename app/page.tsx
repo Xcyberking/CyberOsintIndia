@@ -423,7 +423,7 @@ export default function HomePage() {
       const path=user.id+"/wallet-proof-"+Date.now()+"."+paymentProof.name.split(".").pop();
       const {error:uploadError}=await backend.storage.from("cyberx-user-media").upload(path,paymentProof,{contentType:paymentProof.type,upsert:false});
       if(uploadError){setStoreMessage(uploadError.message);setSavingPayment(false);return;}
-      const {data}=await backend.storage.from("cyberx-user-media").createSignedUrl(path,2592000);proofUrl=data?.signedUrl||"";
+      proofUrl=path;
     }
     const {error}=await backend.rpc("create_wallet_deposit_request",{p_amount_inr:amount,p_utr:utr,p_proof_url:proofUrl||null});
     if(error)setStoreMessage(error.message);
