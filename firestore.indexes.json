@@ -105,6 +105,20 @@
           "order": "ASCENDING"
         }
       ]
+    },
+    {
+      "collectionGroup": "premium_plans",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "is_active",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "price_inr",
+          "order": "ASCENDING"
+        }
+      ]
     }
   ],
   "fieldOverrides": []
