@@ -6,15 +6,17 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "tsc --noEmit"
+    "lint": "tsc --noEmit",
+    "set-admin": "node --env-file=.env.local scripts/set-admin.mjs",
+    "seed": "node --env-file=.env.local scripts/seed-firestore.mjs"
   },
   "dependencies": {
-    "@supabase/ssr": "0.7.0",
-    "@supabase/supabase-js": "2.57.4",
     "lucide-react": "0.468.0",
     "next": "15.5.21",
     "react": "19.1.1",
-    "react-dom": "19.1.1"
+    "react-dom": "19.1.1",
+    "firebase": "^12.0.0",
+    "firebase-admin": "^13.0.0"
   },
   "devDependencies": {
     "@types/node": "22.18.6",

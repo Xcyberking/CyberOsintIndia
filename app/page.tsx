@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { createClient } from "@supabase/supabase-js";
+import { createClient } from "@/lib/firebase/compat";
 import {
   Activity, ArrowLeft, ArrowRight, Bell, CheckCircle2, ChevronRight, Clock3, CircleHelp, CreditCard,
   Compass, Crown, Database, Globe2, History, Home, KeyRound, LayoutGrid,
@@ -25,9 +25,7 @@ const tools: ToolInfo[] = [
 ];
 type HistoryItem = { title: string; query: string; date: string };
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-const supabase = supabaseUrl && supabaseKey ? createClient(supabaseUrl, supabaseKey) : null;
+const backend = createClient();
 
 export default function HomePage() {
   const [page, setPage] = useState("Splash");
@@ -82,10 +80,10 @@ export default function HomePage() {
   const selectedTool = useMemo(() => visibleTools.find(item=>item.key===tool)||tools.find(item=>item.key===tool)||{key:tool,title:dbTools.find(x=>x.slug===tool)?.name||tool,description:dbTools.find(x=>x.slug===tool)?.description||"Custom administrator tool",icon:Wrench,category:"Custom"},[tool,visibleTools,dbTools]);
 
   async function hydrateUser(user: { id: string; email?: string | null; user_metadata?: Record<string, unknown> }) {
-    if (!supabase) return;
-    const { data: profile } = await supabase.from("profiles").select("status,display_name,bio,username,avatar_url,credits,wallet_balance,role,plan_name,plan_expires_at,referral_code").eq("id", user.id).maybeSingle();
+    if (!backend) return;
+    const { data: profile } = await backend.from("profiles").select("status,display_name,bio,username,avatar_url,credits,wallet_balance,role,plan_name,plan_expires_at,referral_code").eq("id", user.id).maybeSingle();
     if (profile?.status && profile.status !== "active") {
-      await supabase.auth.signOut();
+      await backend.auth.signOut();
       setUserEmail(""); setUserId("");
       setAuthMessage("This account is currently suspended or restricted. Contact the site administrator.");
       return;
@@ -93,44 +91,44 @@ export default function HomePage() {
     setUserId(user.id);
     setUserEmail(user.email || "");
     setProfileName(profile?.display_name || (typeof user.user_metadata?.name === "string" ? user.user_metadata.name : user.email?.split("@")[0]) || "");
-    setProfileBio(profile?.bio || ""); setUsername(profile?.username||""); if(profile?.avatar_url){const {data:av}=await supabase.storage.from("cyberx-avatars").createSignedUrl(profile.avatar_url,3600);setAvatarUrl(av?.signedUrl||"");}else setAvatarUrl(""); setCredits(profile?.credits||0); setWalletBalance(Number(profile?.wallet_balance||0)); setRole(profile?.role||"user"); setPlanName(profile?.plan_name||"Free"); setPlanExpires(profile?.plan_expires_at||""); setReferralCode(profile?.referral_code||"");
-    const { data } = await supabase.from("search_history").select("tool_slug,input_summary,created_at")
+    setProfileBio(profile?.bio || ""); setUsername(profile?.username||""); if(profile?.avatar_url){const {data:av}=await backend.storage.from("cyberx-avatars").createSignedUrl(profile.avatar_url,3600);setAvatarUrl(av?.signedUrl||"");}else setAvatarUrl(""); setCredits(profile?.credits||0); setWalletBalance(Number(profile?.wallet_balance||0)); setRole(profile?.role||"user"); setPlanName(profile?.plan_name||"Free"); setPlanExpires(profile?.plan_expires_at||""); setReferralCode(profile?.referral_code||"");
+    const { data } = await backend.from("search_history").select("tool_slug,input_summary,created_at")
       .eq("user_id", user.id).order("created_at", { ascending: false }).limit(30);
-    if (data) setHistory(data.map((item) => ({
+    if (data) setHistory(data.map((item: {tool_slug:string;input_summary:string;created_at:string}) => ({
       title: tools.find((entry) => entry.key === item.tool_slug || toolSlug[entry.key]===item.tool_slug)?.title || dbTools.find(entry=>entry.slug===item.tool_slug)?.name || item.tool_slug,
       query: item.input_summary,
       date: new Date(item.created_at).toLocaleString()
     })));
     const [{data:claims},{data:transactions}]=await Promise.all([
-      supabase.from("referral_claims").select("id,reward,status").eq("referrer_id",user.id),
-      supabase.from("credit_transactions").select("delta").eq("user_id",user.id).ilike("reason","%Referral reward%")
+      backend.from("referral_claims").select("id,reward,status").eq("referrer_id",user.id),
+      backend.from("credit_transactions").select("delta").eq("user_id",user.id).ilike("reason","%Referral reward%")
     ]);
-    setReferralCount(claims?.length||0); setReferralCredits((transactions||[]).reduce((sum,row)=>sum+(row.delta||0),0));
+    setReferralCount(claims?.length||0); setReferralCredits((transactions||[]).reduce((sum:number,row:{delta?:number})=>sum+(row.delta||0),0));
   }
 
   useEffect(() => {
-    if (!supabase) return;
+    if (!backend) { setAuthMessage("Firebase is not configured. Add the six NEXT_PUBLIC_FIREBASE_* values in your hosting settings."); setPage("Login"); return; }
     let active = true;
     void Promise.all([
-      supabase.from("tools").select("slug,name,description,category,enabled,handler,credit_cost,price_inr,input_label,result_note,config"),
-      supabase.from("premium_plans").select("id,name,description,price_inr,credits,duration_days").eq("is_active",true).order("price_inr"),
-      supabase.from("site_settings").select("key,value").in("key",["payment_qr_url","payment_instructions","default_signup_credits","referral_new_user_credits","referral_reward"])
+      backend.from("tools").select("slug,name,description,category,enabled,handler,credit_cost,price_inr,input_label,result_note,config").eq("enabled",true),
+      backend.from("premium_plans").select("id,name,description,price_inr,credits,duration_days").eq("is_active",true).order("price_inr"),
+      backend.from("site_settings").select("key,value").in("key",["payment_qr_url","payment_instructions","default_signup_credits","referral_new_user_credits","referral_reward"])
     ]).then(([t,p,s])=>{
       if(!active)return;
-      if(t.data){setDbTools(t.data as typeof dbTools);setEnabledToolSlugs(t.data.filter(row=>row.enabled).map(row=>row.slug));}
+      if(t.data){const toolRows=t.data as typeof dbTools;setDbTools(toolRows);setEnabledToolSlugs(toolRows.filter((row)=>row.enabled).map((row)=>row.slug));}
       if(p.data)setPlans(p.data as typeof plans);
-      const settings=Object.fromEntries((s.data||[]).map(row=>[row.key,row.value]));
+      const settings=Object.fromEntries((s.data||[]).map((row:{key:string;value:unknown})=>[row.key,row.value]));
       setPaymentQr(String(settings.payment_qr_url||"").replace(/^"|"$/g,""));
       setPaymentInstructions(String(settings.payment_instructions||"").replace(/^"|"$/g,""));
       const rewardCredits=(value:unknown,fallback:number)=>{const raw=value&&typeof value==="object"?(value as {credits?:unknown}).credits:value;const n=Number(raw);return Number.isSafeInteger(n)&&n>=0?n:fallback;};
       setReferralRewards({signup:rewardCredits(settings.default_signup_credits,3),referred:rewardCredits(settings.referral_new_user_credits,7),referrer:rewardCredits(settings.referral_reward,3)});
     });
-    void supabase.auth.getSession().then(({ data }) => {
+    void backend.auth.getSession().then(({ data }: {data:{session:{user:any}|null}}) => {
       if(!active)return;
       if(data.session?.user){void hydrateUser(data.session.user);setPage("Home");}
       else setPage("Login");
     });
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: { subscription } } = backend.auth.onAuthStateChange((_event: string, session: {user:any}|null) => {
       if (!active) return;
       if (!session) { setUserEmail(""); setUserId(""); setProfileName(""); setProfileBio(""); setHistory([]); }
       else { setUserEmail(session.user.email || ""); Promise.resolve().then(() => void hydrateUser(session.user)); }
@@ -141,22 +139,22 @@ export default function HomePage() {
 
   // Keep the displayed balance synchronized with database changes from this tab, other tabs, and admin actions.
   useEffect(() => {
-    if (!supabase || !userId) return;
-    const channel = supabase
+    if (!backend || !userId) return;
+    const channel = backend
       .channel("profile-credit-balance-" + userId)
       .on("postgres_changes", {
         event: "UPDATE",
         schema: "public",
         table: "profiles",
         filter: "id=eq." + userId
-      }, (payload) => {
+      }, (payload: {new:Record<string,unknown>}) => {
         const nextCredits = Number((payload.new as { credits?: unknown }).credits);
         const nextWallet = Number((payload.new as { wallet_balance?: unknown }).wallet_balance);
         if (Number.isSafeInteger(nextCredits) && nextCredits >= 0) setCredits(nextCredits);
         if (Number.isFinite(nextWallet) && nextWallet >= 0) setWalletBalance(nextWallet);
       })
       .subscribe();
-    return () => { void supabase.removeChannel(channel); };
+    return () => { void backend.removeChannel(channel); };
   }, [userId]);
 
   const goTool = (key: ToolKey) => { setTool(key); setPage("Tool"); setQuery(""); setResult(null); setError(""); };
@@ -174,8 +172,8 @@ export default function HomePage() {
       let creditsHandledByProxy=false;
       // Run administrator-defined APIs on the server so browser CORS does not block results.
       if(configuredTool && configuredApi){
-        if(!supabase)throw new Error("Authentication service is unavailable.");
-        const {data:proxyResult,error:proxyError}=await supabase.functions.invoke("run-custom-tool",{body:{slug:tool,query:query.trim()}});
+        if(!backend)throw new Error("Firebase Authentication is unavailable.");
+        const {data:proxyResult,error:proxyError}=await backend.functions.invoke("run-custom-tool",{body:{slug:tool,query:query.trim()}});
         if(proxyError||proxyResult?.error)throw new Error(proxyError?.message||proxyResult.error);
         data=proxyResult.result;
         creditsHandledByProxy=true;
@@ -270,7 +268,7 @@ export default function HomePage() {
           note: "These are direct public profile links. No accounts are scraped and no match is claimed."
         };
       }
-      if(supabase&&!creditsHandledByProxy){const {data:{user}}=await supabase.auth.getUser();if(user){const slug=toolSlug[tool]||tool;const {data:remaining,error:creditError}=await supabase.rpc("consume_tool_wallet",{p_tool_slug:slug});if(creditError)throw new Error(creditError.message);if(typeof remaining==="number")setWalletBalance(remaining);}}
+      if(backend&&!creditsHandledByProxy){const {data:{user}}=await backend.auth.getUser();if(user){const slug=toolSlug[tool]||tool;const {data:remaining,error:creditError}=await backend.rpc("consume_tool_wallet",{p_tool_slug:slug});if(creditError)throw new Error(creditError.message);if(typeof remaining==="number")setWalletBalance(remaining);}}
       setResult(data); await addHistory(selectedTool.title, query.trim());
     } catch (e) {
       setError(e instanceof Error ? e.message : "Something went wrong.");
@@ -301,16 +299,16 @@ export default function HomePage() {
       setAuthMessage("Passwords do not match.");
       return;
     }
-    if (!supabase) {
-      setAuthMessage("Supabase is not configured. Check NEXT_PUBLIC_SUPABASE_URL and the public publishable key in hosting settings.");
+    if (!backend) {
+      setAuthMessage("Firebase is not configured. Add the NEXT_PUBLIC_FIREBASE_* settings in hosting.");
       return;
     }
 
     setAuthBusy(true);
     try {
       const response = authMode === "login"
-        ? await supabase.auth.signInWithPassword({ email: normalizedEmail, password })
-        : await supabase.auth.signUp({
+        ? await backend.auth.signInWithPassword({ email: normalizedEmail, password })
+        : await backend.auth.signUp({
             email: normalizedEmail,
             password,
             options: {
@@ -360,8 +358,8 @@ export default function HomePage() {
   }
   async function openNotifications() {
     setPage("Notifications"); setNoticeLoading(true);
-    if (supabase) {
-      const { data } = await supabase.from("announcements").select("title,body,created_at").eq("active",true).order("created_at",{ascending:false}).limit(30);
+    if (backend) {
+      const { data } = await backend.from("announcements").select("title,body,created_at").eq("active",true).order("created_at",{ascending:false}).limit(30);
       setAnnouncements(data || []);
     }
     setNoticeLoading(false);
@@ -390,11 +388,11 @@ export default function HomePage() {
   }
 
   async function saveProfile() {
-    if (!supabase) return;
+    if (!backend) return;
     setProfileSaving(true); setProfileMessage("");
-    const { data: { user } } = await supabase.auth.getUser();
+    const { data: { user } } = await backend.auth.getUser();
     if (!user) { setProfileMessage("Please sign in again."); setProfileSaving(false); return; }
-    const { error } = await supabase.from("profiles").update({
+    const { error } = await backend.from("profiles").update({
       display_name: profileName.trim(), username: username.trim()||null, bio: profileBio.trim(), updated_at: new Date().toISOString()
     }).eq("id", user.id);
     setProfileMessage(error ? error.message : "Profile updated successfully."); if(!error)await hydrateUser(user);
@@ -402,93 +400,93 @@ export default function HomePage() {
   }
 
   async function uploadAvatar(file:File){
-    if(!supabase)return; const {data:{user}}=await supabase.auth.getUser(); if(!user)return;
+    if(!backend)return; const {data:{user}}=await backend.auth.getUser(); if(!user)return;
     if(!["image/jpeg","image/png","image/webp"].includes(file.type)||file.size>5*1024*1024){setProfileMessage("Choose a JPG, PNG or WebP image under 5 MB.");return;}
     const path=user.id+"/avatar-"+Date.now()+"."+file.name.split(".").pop();
-    const {error}=await supabase.storage.from("cyberx-avatars").upload(path,file,{upsert:true,contentType:file.type});
+    const {error}=await backend.storage.from("cyberx-avatars").upload(path,file,{upsert:true,contentType:file.type});
     if(error){setProfileMessage(error.message);return;}
-    const {data}=await supabase.storage.from("cyberx-avatars").createSignedUrl(path,3600);
-    if(data?.signedUrl){const {error:e}=await supabase.from("profiles").update({avatar_url:path,updated_at:new Date().toISOString()}).eq("id",user.id);setProfileMessage(e?e.message:"Profile photo updated.");if(!e)setAvatarUrl(data.signedUrl);}
+    const {data}=await backend.storage.from("cyberx-avatars").createSignedUrl(path,3600);
+    if(data?.signedUrl){const {error:e}=await backend.from("profiles").update({avatar_url:path,updated_at:new Date().toISOString()}).eq("id",user.id);setProfileMessage(e?e.message:"Profile photo updated.");if(!e)setAvatarUrl(data.signedUrl);}
   }
   async function submitWalletDeposit(){
-    if(!supabase){setStoreMessage("Payment service is unavailable.");return;}
+    if(!backend){setStoreMessage("Payment service is unavailable.");return;}
     const amount=Number(depositAmount);
     if(!Number.isFinite(amount)||amount<10||amount>50000||Math.abs(Math.round(amount*100)-amount*100)>0.000001){setStoreMessage("Enter an amount from ₹10 to ₹50,000 (up to 2 decimal places).");return;}
     const utr=paymentReference.trim();
     if(utr.length<6||utr.length>80){setStoreMessage("Enter a valid UTR / transaction reference (6–80 characters).");return;}
     setSavingPayment(true);setStoreMessage("");
-    const {data:{user}}=await supabase.auth.getUser();
+    const {data:{user}}=await backend.auth.getUser();
     if(!user){setStoreMessage("Please sign in again.");setSavingPayment(false);return;}
     let proofUrl="";
     if(paymentProof){
       if(!["image/png","image/jpeg","image/webp"].includes(paymentProof.type)||paymentProof.size>5*1024*1024){setStoreMessage("Payment proof must be JPG, PNG or WebP under 5 MB.");setSavingPayment(false);return;}
       const path=user.id+"/wallet-proof-"+Date.now()+"."+paymentProof.name.split(".").pop();
-      const {error:uploadError}=await supabase.storage.from("cyberx-user-media").upload(path,paymentProof,{contentType:paymentProof.type,upsert:false});
+      const {error:uploadError}=await backend.storage.from("cyberx-user-media").upload(path,paymentProof,{contentType:paymentProof.type,upsert:false});
       if(uploadError){setStoreMessage(uploadError.message);setSavingPayment(false);return;}
-      const {data}=await supabase.storage.from("cyberx-user-media").createSignedUrl(path,2592000);proofUrl=data?.signedUrl||"";
+      proofUrl=path;
     }
-    const {error}=await supabase.rpc("create_wallet_deposit_request",{p_amount_inr:amount,p_utr:utr,p_proof_url:proofUrl||null});
+    const {error}=await backend.rpc("create_wallet_deposit_request",{p_amount_inr:amount,p_utr:utr,p_proof_url:proofUrl||null});
     if(error)setStoreMessage(error.message);
     else {setStoreMessage("Deposit request submitted. Wallet balance will update only after the admin verifies the payment in the receiving account and approves it.");setPaymentReference("");setPaymentProof(null);await loadMyPayments();}
     setSavingPayment(false);
   }
 
   async function submitPayment(){
-    if(!supabase||!selectedPlan){setStoreMessage("Choose a plan first.");return;}
+    if(!backend||!selectedPlan){setStoreMessage("Choose a plan first.");return;}
     const utr=paymentReference.trim();
     if(utr.length<6||utr.length>80){setStoreMessage("Enter a valid UTR / transaction reference (6–80 characters).");return;}
     setSavingPayment(true);setStoreMessage("");
-    const {data:{user}}=await supabase.auth.getUser();const plan=plans.find(p=>p.id===selectedPlan);
+    const {data:{user}}=await backend.auth.getUser();const plan=plans.find(p=>p.id===selectedPlan);
     if(!user||!plan){setStoreMessage("Please sign in and select a valid plan.");setSavingPayment(false);return;}
-    const {data:existing,error:checkError}=await supabase.from("payment_records").select("id").eq("user_id",user.id).eq("status","pending").eq("provider","manual_qr").limit(1);
+    const {data:existing,error:checkError}=await backend.from("payment_records").select("id").eq("user_id",user.id).eq("status","pending").eq("provider","manual_qr").limit(1);
     if(checkError){setStoreMessage(checkError.message);setSavingPayment(false);return;}
     if(existing?.length){setStoreMessage("You already have a payment awaiting admin review. Please wait for its decision.");setSavingPayment(false);return;}
     let proofUrl="";
     if(paymentProof){
       if(!["image/png","image/jpeg","image/webp"].includes(paymentProof.type)||paymentProof.size>5*1024*1024){setStoreMessage("Payment proof must be JPG, PNG or WebP under 5 MB.");setSavingPayment(false);return;}
       const path=user.id+"/payment-"+Date.now()+"."+paymentProof.name.split(".").pop();
-      const {error:e}=await supabase.storage.from("cyberx-user-media").upload(path,paymentProof,{contentType:paymentProof.type,upsert:false});
+      const {error:e}=await backend.storage.from("cyberx-user-media").upload(path,paymentProof,{contentType:paymentProof.type,upsert:false});
       if(e){setStoreMessage(e.message);setSavingPayment(false);return;}
-      const {data}=await supabase.storage.from("cyberx-user-media").createSignedUrl(path,2592000);proofUrl=data?.signedUrl||"";
+      proofUrl=path;
     }
-    const {error}=await supabase.from("payment_records").insert({user_id:user.id,plan_id:plan.id,provider:"manual_qr",provider_reference:utr,amount_inr:plan.price_inr,status:"pending",proof_url:proofUrl,user_note:"Plan: "+plan.name});
+    const {error}=await backend.from("payment_records").insert({user_id:user.id,plan_id:plan.id,provider:"manual_qr",provider_reference:utr,amount_inr:plan.price_inr,status:"pending",proof_url:proofUrl,user_note:"Plan: "+plan.name});
     if(error)setStoreMessage(error.message);
     else {setStoreMessage("Payment submitted successfully. Status: Pending admin verification. Credits will be added only after approval.");setPaymentReference("");setPaymentProof(null);await loadMyPayments();}
     setSavingPayment(false);
   }
 
   async function loadMyPayments(){
-    if(!supabase)return;
-    const {data:{user}}=await supabase.auth.getUser();if(!user)return;
-    const {data}=await supabase.from("payment_records").select("id,provider_reference,amount_inr,status,created_at,admin_note,user_note,payment_type").eq("user_id",user.id).order("created_at",{ascending:false}).limit(20);
+    if(!backend)return;
+    const {data:{user}}=await backend.auth.getUser();if(!user)return;
+    const {data}=await backend.from("payment_records").select("id,provider_reference,amount_inr,status,created_at,admin_note,user_note,payment_type").eq("user_id",user.id).order("created_at",{ascending:false}).limit(20);
     setMyPayments((data||[]) as typeof myPayments);
-    const {data:ledger}=await supabase.from("wallet_transactions").select("id,amount_inr,balance_after,transaction_type,description,created_at").eq("user_id",user.id).order("created_at",{ascending:false}).limit(30);
+    const {data:ledger}=await backend.from("wallet_transactions").select("id,amount_inr,balance_after,transaction_type,description,created_at").eq("user_id",user.id).order("created_at",{ascending:false}).limit(30);
     setWalletTransactions((ledger||[]) as typeof walletTransactions);
   }
 
   async function loadSupportTickets(){
-    if(!supabase)return;
-    const {data:{user}}=await supabase.auth.getUser();if(!user)return;
-    const {data,error}=await supabase.from("support_tickets").select("id,subject,message,status,admin_reply,created_at,updated_at").eq("user_id",user.id).order("created_at",{ascending:false}).limit(30);
+    if(!backend)return;
+    const {data:{user}}=await backend.auth.getUser();if(!user)return;
+    const {data,error}=await backend.from("support_tickets").select("id,subject,message,status,admin_reply,created_at,updated_at").eq("user_id",user.id).order("created_at",{ascending:false}).limit(30);
     if(!error)setSupportTickets((data||[]) as typeof supportTickets);
   }
 
   async function submitSupportTicket(){
-    if(!supabase||!supportSubject.trim()||supportMessage.trim().length<10){setSupportNotice("Enter a subject and explain your issue in at least 10 characters.");return;}
+    if(!backend||!supportSubject.trim()||supportMessage.trim().length<10){setSupportNotice("Enter a subject and explain your issue in at least 10 characters.");return;}
     setSupportBusy(true);setSupportNotice("");
-    const {data:{user}}=await supabase.auth.getUser();
+    const {data:{user}}=await backend.auth.getUser();
     if(!user){setSupportNotice("Please sign in to contact support.");setSupportBusy(false);return;}
-    const {error}=await supabase.from("support_tickets").insert({user_id:user.id,subject:supportSubject.trim().slice(0,120),message:supportMessage.trim().slice(0,5000),status:"open"});
+    const {error}=await backend.from("support_tickets").insert({user_id:user.id,subject:supportSubject.trim().slice(0,120),message:supportMessage.trim().slice(0,5000),status:"open"});
     if(error)setSupportNotice(error.message);
     else {setSupportSubject("");setSupportMessage("");setSupportNotice("Your support request was sent to the administrator.");await loadSupportTickets();}
     setSupportBusy(false);
   }
 
   async function clearHistory() {
-    if (supabase) {
-      const { data: { user } } = await supabase.auth.getUser();
+    if (backend) {
+      const { data: { user } } = await backend.auth.getUser();
       if (user) {
-        const { error } = await supabase.from("search_history").delete().eq("user_id", user.id);
+        const { error } = await backend.from("search_history").delete().eq("user_id", user.id);
         if (error) { setError("Could not clear saved history: " + error.message); return; }
       }
     }
@@ -496,7 +494,7 @@ export default function HomePage() {
   }
 
   async function logout() {
-    if (supabase) await supabase.auth.signOut();
+    if (backend) await backend.auth.signOut();
     setUserEmail(""); setUserId(""); setProfileName(""); setProfileBio(""); setHistory([]); setPage("Home");
   }
 
@@ -517,15 +515,15 @@ export default function HomePage() {
       <label className="field-label">Email address</label><input className="field" type="email" placeholder="you@example.com" value={email} onChange={(e)=>setEmail(e.target.value)}/>
       <label className="field-label">Password</label><input className="field" type="password" placeholder="Enter password" value={password} onChange={(e)=>setPassword(e.target.value)}/>
       {authMode === "register" && <><label className="field-label">Confirm password</label><input className="field" type="password" placeholder="Confirm password" value={confirmPassword} onChange={e=>setConfirmPassword(e.target.value)}/></>}
-      {authMode === "login" && <button className="text-link" style={{marginTop:10}} onClick={async()=>{if(!supabase||!email.trim()){setAuthMessage("Enter your email address first.");return;}const {error}=await supabase.auth.resetPasswordForEmail(email.trim(),{redirectTo:window.location.origin});setAuthMessage(error?error.message:"Password reset email sent if the account exists.");}}>Forgot password?</button>}
+      {authMode === "login" && <button className="text-link" style={{marginTop:10}} onClick={async()=>{if(!backend||!email.trim()){setAuthMessage("Enter your email address first.");return;}const {error}=await backend.auth.resetPasswordForEmail(email.trim(),{redirectTo:window.location.origin});setAuthMessage(error?error.message:"Password reset email sent if the account exists.");}}>Forgot password?</button>}
       <button type="button" className="primary-btn" style={{width:"100%",marginTop:20}} onClick={authenticate} disabled={authBusy}>{authBusy ? "Please wait…" : authMode === "login" ? "Login" : "Create account"} {!authBusy && <ArrowRight size={15} style={{verticalAlign:"middle",marginLeft:5}}/>}</button>
       {authMessage && <p className={authMessage.startsWith("Account created") ? "notice" : "error"} role="status">{authMessage}</p>}
       <div className="auth-switch">{authMode === "login" ? "Don't have an account?" : "Already registered?"} <button onClick={()=>{setAuthMode(authMode==="login"?"register":"login");setAuthMessage("");setConfirmPassword("");}}>{authMode==="login"?"Register":"Login"}</button></div>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:9,marginTop:16}}>
-        <button className="secondary-btn" onClick={async()=>{if(!supabase){setAuthMessage("Supabase is not configured.");return;}const {error}=await supabase.auth.signInWithOAuth({provider:"google",options:{redirectTo:window.location.origin+"/auth/callback?next=%2F",scopes:"openid email profile"}});if(error)setAuthMessage(error.message);}}><Chrome size={15} style={{verticalAlign:"middle",marginRight:6}}/>Google</button>
-        <button className="secondary-btn" onClick={async()=>{if(!supabase){setAuthMessage("Supabase is not configured.");return;}const {error}=await supabase.auth.signInWithOAuth({provider:"github",options:{redirectTo:window.location.origin+"/auth/callback?next=%2F",scopes:"read:user user:email"}});if(error)setAuthMessage(error.message);}}><Github size={15} style={{verticalAlign:"middle",marginRight:6}}/>GitHub</button>
+        <button className="secondary-btn" onClick={async()=>{if(!backend){setAuthMessage("Firebase is not configured.");return;}const {error}=await backend.auth.signInWithOAuth({provider:"google",options:{redirectTo:window.location.origin+"/auth/callback?next=%2F",scopes:"openid email profile"}});if(error)setAuthMessage(error.message);}}><Chrome size={15} style={{verticalAlign:"middle",marginRight:6}}/>Google</button>
+        <button className="secondary-btn" onClick={async()=>{if(!backend){setAuthMessage("Firebase is not configured.");return;}const {error}=await backend.auth.signInWithOAuth({provider:"github",options:{redirectTo:window.location.origin+"/auth/callback?next=%2F",scopes:"read:user user:email"}});if(error)setAuthMessage(error.message);}}><Github size={15} style={{verticalAlign:"middle",marginRight:6}}/>GitHub</button>
       </div>
-      <div className="notice">Google and GitHub buttons require their providers to be enabled in Supabase Auth. Never share your password or verification codes.</div>
+      <div className="notice">Google and GitHub buttons require their providers to be enabled in Firebase Authentication. Never share your password or verification codes.</div>
       <button className="secondary-btn" style={{width:"100%",marginTop:14}} onClick={()=>setPage("Home")}>Back to home</button>
     </div></div>;
   }
@@ -649,7 +647,7 @@ export default function HomePage() {
 
       {page === "Profile" && <><div className="profile-card"><div className="profile-avatar">{avatarUrl?<img src={avatarUrl} alt="Profile" style={{width:"100%",height:"100%",borderRadius:"50%",objectFit:"cover"}}/>:<User size={26}/>}</div><div><strong>{profileName || userEmail?.split("@")[0] || "Guest workspace"}</strong><div className="notice" style={{margin:0}}>{userEmail||"Not signed in"}</div></div></div><div className="content-panel"><h3 style={{marginTop:0}}>Edit Profile</h3>{userEmail ? <><label className="field-label">Profile image</label><input className="field" type="file" accept="image/png,image/jpeg,image/webp" onChange={e=>{const file=e.target.files?.[0];if(file)void uploadAvatar(file);}}/><label className="field-label">Name</label><input className="field" value={profileName} onChange={e=>setProfileName(e.target.value)} maxLength={60}/><label className="field-label">Username</label><input className="field" value={username} onChange={e=>setUsername(e.target.value.replace(/[^a-zA-Z0-9_]/g,"").slice(0,24))} placeholder="your_username" maxLength={24}/><label className="field-label">Bio</label><textarea className="field" value={profileBio} onChange={e=>setProfileBio(e.target.value)} maxLength={240} rows={4}/><div className="stats" style={{marginTop:16}}><div className="stat-card"><div className="stat-label">CURRENT PLAN</div><div className="stat-value">{planName}</div><small>{planExpires?new Date(planExpires).toLocaleDateString():"No expiry"}</small></div><div className="stat-card"><div className="stat-label">AVAILABLE CREDITS</div><div className="stat-value">{credits}</div></div></div><div className="content-panel" style={{marginTop:16}}><h3><Gift size={18} style={{verticalAlign:"middle",marginRight:6}}/>Referral Program</h3><p className="notice">No referral link: {referralRewards.signup} credits. With your referral link: new member gets {referralRewards.referred} credits and you get {referralRewards.referrer} credits after email verification.</p><label className="field-label">Your personal invite link</label><div className="form-row"><input className="field" value={referralCode?referralInviteUrl():"Generating referral link…"} readOnly/><button className="secondary-btn" disabled={!referralCode} onClick={()=>void copyReferralInvite()}><Copy size={14}/> Copy</button></div><div className="form-row" style={{display:"flex",flexWrap:"wrap",gap:8,marginTop:12}}><button className="secondary-btn" disabled={!referralCode} onClick={()=>void shareReferral("whatsapp")}><MessageCircle size={15}/> WhatsApp</button><button className="secondary-btn" disabled={!referralCode} onClick={()=>void shareReferral("instagram")}><Instagram size={15}/> Instagram</button><button className="secondary-btn" disabled={!referralCode} onClick={()=>void shareReferral("facebook")}><Facebook size={15}/> Facebook</button><button className="secondary-btn" disabled={!referralCode} onClick={()=>void shareReferral("telegram")}><Send size={15}/> Telegram</button></div>{referralShareMessage&&<p className="notice">{referralShareMessage}</p>}<div className="stats"><div className="stat-card"><div className="stat-label">REFERRALS</div><div className="stat-value">{referralCount}</div></div><div className="stat-card"><div className="stat-label">CREDITS EARNED</div><div className="stat-value">{referralCredits}</div></div></div></div><button className="primary-btn" style={{marginTop:16}} disabled={profileSaving} onClick={()=>void saveProfile()}><Save size={15} style={{verticalAlign:"middle",marginRight:6}}/>{profileSaving?"Saving…":"Save profile"}</button>{profileMessage&&<p className={profileMessage.includes("successfully")?"notice":"error"}>{profileMessage}</p>}<button className="secondary-btn" style={{marginLeft:8}} onClick={logout}><LogOut size={15} style={{verticalAlign:"middle",marginRight:6}}/>Logout</button></> : <><p className="notice">Sign in or create an account to edit your profile and sync history.</p><button className="primary-btn" onClick={()=>{setAuthMode("login");setPage("Login");}}>Login</button><button className="secondary-btn" style={{marginLeft:8}} onClick={()=>{setAuthMode("register");setPage("Register");}}>Register</button></>}</div></>}
 
-      {page === "Settings" && <div className="content-panel"><h3 style={{marginTop:0}}>Settings & Privacy</h3><div className="tool-row"><div className="tool-icon"><ShieldCheck size={19}/></div><span><strong>Privacy-first research</strong><small>Only public technical information tools are enabled.</small></span><CheckCircle2 color="#12a56a"/></div><div className="tool-row"><div className="tool-icon"><Database size={19}/></div><span><strong>Data storage</strong><small>Signed-in search history is saved securely to your Supabase account.</small></span></div><div className="tool-row"><div className="tool-icon"><LockKeyhole size={19}/></div><span><strong>Authentication</strong><small>{supabase?"Supabase is configured.":"Supabase is not configured yet."}</small></span></div><div className="notice">To enable authentication, set the two public Supabase environment variables shown in .env.example. Never expose a service-role key in client-side code.</div><button className="secondary-btn" style={{marginTop:16}} onClick={()=>navTo("Profile")}>Account settings</button></div>}
+      {page === "Settings" && <div className="content-panel"><h3 style={{marginTop:0}}>Settings & Privacy</h3><div className="tool-row"><div className="tool-icon"><ShieldCheck size={19}/></div><span><strong>Privacy-first research</strong><small>Only public technical information tools are enabled.</small></span><CheckCircle2 color="#12a56a"/></div><div className="tool-row"><div className="tool-icon"><Database size={19}/></div><span><strong>Data storage</strong><small>Signed-in search history is saved securely to your Firebase account.</small></span></div><div className="tool-row"><div className="tool-icon"><LockKeyhole size={19}/></div><span><strong>Authentication</strong><small>{backend?"Firebase is configured.":"Firebase is not configured yet."}</small></span></div><div className="notice">To enable authentication, set the two public Firebase environment variables shown in .env.example. Never expose a service-role key in client-side code.</div><button className="secondary-btn" style={{marginTop:16}} onClick={()=>navTo("Profile")}>Account settings</button></div>}
     </main>
 
     <nav className="mobile-nav">{[{label:"Home",icon:Home},{label:"Tools",icon:LayoutGrid},{label:"Store",icon:Store},{label:"Support",icon:CircleHelp},{label:"Profile",icon:User}].map(({label,icon:Icon})=><button key={label} className={(page===label||(label==="Tools"&&page==="All Tools")||(label==="Tools"&&page==="Tool")?"active":"")} onClick={()=>navTo(label==="Tools"?"All Tools":label)}><Icon/><span>{label}</span></button>)}</nav>
