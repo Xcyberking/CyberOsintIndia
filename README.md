@@ -85,3 +85,16 @@ For each provider's OAuth application, use the Supabase provider callback URL sh
 Google OAuth Web Client: add https://cyber-osint-india.vercel.app to Authorized JavaScript origins; add the Supabase provider callback URL to Authorized redirect URIs. GitHub OAuth App: set the app homepage to https://cyber-osint-india.vercel.app and Authorization callback URL to the Supabase provider callback URL.
 
 The admin account must already have `role='admin'` and `status='active'` in `public.profiles`. Do not promote users based on email text, provider name, or user-editable metadata. Keep OAuth client secrets only in the Supabase provider settings, never in `NEXT_PUBLIC_*` variables or browser code.
+
+
+## Manual wallet payments and INR query pricing
+
+This branch replaces the Razorpay checkout flow with manual UPI/QR deposits and a rupee-denominated wallet.
+
+1. Apply `supabase/migrations/20261127150000_manual_wallet_and_query_pricing.sql` in the Supabase SQL Editor.
+2. Deploy the updated `run-custom-tool` Supabase Edge Function from `supabase/functions/run-custom-tool`.
+3. Sign in as an active administrator, open **Admin → Site Settings**, upload the receiving UPI QR, and save the payment instructions.
+4. Open **Admin → Tools Management** and set **INR per successful query** for every tool. A value of ₹0 makes that tool free.
+5. Users open **Store / Wallet**, submit a deposit amount and UTR/reference, and optionally attach proof. Requests remain pending until an administrator checks the actual incoming transaction in the receiving bank/UPI account and approves it in **Admin → Payments**.
+
+Wallet deposits are not automatically confirmed by this application. Never approve a request based only on a screenshot; independently verify the amount, UTR, recipient and settlement in the receiving account. Each approved request is credited once. Query charges are applied atomically on the server after a successful tool response; insufficient balance blocks the result. The legacy credits/plans tables remain for backwards compatibility but are not used for wallet query billing.
