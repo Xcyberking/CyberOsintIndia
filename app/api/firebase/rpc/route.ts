@@ -97,7 +97,7 @@ export async function POST(request: Request) {
       if (!Number.isInteger(delta) || delta === 0 || Math.abs(delta) > 100000) throw new Error("Invalid credit amount.");
       const users = await db.collection("profiles").get();
       let changed = 0;
-      for (const batch of Array.from({length: Math.ceil(users.size / 400)}, (_,i)=>users.docs.slice(i*400,(i+1)*400))) {
+      for (const batch of Array.from({length: Math.ceil(users.size / 200)}, (_,i)=>users.docs.slice(i*200,(i+1)*200))) {
         const write = db.batch();
         for (const user of batch) { const next = Number(user.data().credits || 0) + delta; if (next < 0) continue; write.update(user.ref, { credits: next }); write.set(db.collection("credit_transactions").doc(), { user_id: user.id, delta, reason: String(args.p_reason || "Admin bulk adjustment"), created_at: new Date().toISOString() }); changed++; }
         await write.commit();
@@ -105,7 +105,8 @@ export async function POST(request: Request) {
       return json({ data: changed });
     }
     if (name === "admin_assign_plan") {
-      const [userRef, planSnap] = [db.collection("profiles").doc(String(args.p_target_user_id)), await db.collection("premium_plans").doc(String(args.p_plan_id)).get()];
+      const userRef = db.collection("profiles").doc(String(args.p_target_user_id));
+      const planSnap = await db.collection("premium_plans").doc(String(args.p_plan_id)).get();
       if (!planSnap.exists) throw new Error("Plan not found.");
       const plan = planSnap.data()!;
       await db.runTransaction(async tx => { const u = await tx.get(userRef); if (!u.exists) throw new Error("User not found."); tx.update(userRef, { plan_name: plan.name, plan_expires_at: new Date(Date.now() + Number(plan.duration_days || 30) * 86400000).toISOString(), credits: Number(u.data()?.credits || 0) + (args.p_add_credits ? Number(plan.credits || 0) : 0) }); });
