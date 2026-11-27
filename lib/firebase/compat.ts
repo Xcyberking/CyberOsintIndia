@@ -76,7 +76,7 @@ class QueryBuilder {
         for (const row of docs) {
           const id = String(row.id);
           if (this.action === "delete") await deleteDoc(doc(firestore, this.table, id));
-          else await updateDoc(doc(firestore, this.table, id), this.payload);
+          else await updateDoc(doc(firestore, this.table, id), this.payload as AnyRow);
         }
         return { data: null, error: null };
       }
