@@ -239,7 +239,7 @@ export default function AdminPage() {
       const current=editingToolId?rows.find(row=>String(row.id)===editingToolId):undefined;
       const apiUrl=(form.url||"").trim();
       const queryPrice=Number(form.price_inr??0);
-      if(!Number.isFinite(queryPrice)||queryPrice<0||queryPrice>100000||Math.round(queryPrice*100)!==queryPrice*100){setMessage("Query price must be between ₹0 and ₹100,000 with up to 2 decimal places.");setSaving(false);return;}
+      if(!Number.isFinite(queryPrice)||queryPrice<0||queryPrice>100000||Math.abs(Math.round(queryPrice*100)-queryPrice*100)>0.000001){setMessage("Query price must be between ₹0 and ₹100,000 with up to 2 decimal places.");setSaving(false);return;}
       let handler=String(form.handler||current?.handler||"custom");
       const currentConfig=(current?.config&&typeof current.config==="object"?current.config:{}) as Record<string,unknown>;
       const config:Record<string,unknown>={...currentConfig,icon:form.icon||"Wrench"};
