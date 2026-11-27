@@ -447,7 +447,7 @@ export default function HomePage() {
       const path=user.id+"/payment-"+Date.now()+"."+paymentProof.name.split(".").pop();
       const {error:e}=await backend.storage.from("cyberx-user-media").upload(path,paymentProof,{contentType:paymentProof.type,upsert:false});
       if(e){setStoreMessage(e.message);setSavingPayment(false);return;}
-      const {data}=await backend.storage.from("cyberx-user-media").createSignedUrl(path,2592000);proofUrl=data?.signedUrl||"";
+      proofUrl=path;
     }
     const {error}=await backend.from("payment_records").insert({user_id:user.id,plan_id:plan.id,provider:"manual_qr",provider_reference:utr,amount_inr:plan.price_inr,status:"pending",proof_url:proofUrl,user_note:"Plan: "+plan.name});
     if(error)setStoreMessage(error.message);
