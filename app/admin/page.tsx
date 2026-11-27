@@ -1,7 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { createClient, type User as AuthUser } from "@supabase/supabase-js";
+import { createClient } from "@/lib/firebase/compat";
+type AuthUser = { id: string; email?: string | null; email_confirmed_at?: string | null };
 import {
   Activity, ArrowDownToLine, ArrowLeft, ArrowRight, Bell, BookOpen, CheckCircle2,
   ChevronRight, CircleHelp, Code2, Coins, CreditCard, Database, FileClock,
@@ -41,9 +42,7 @@ const tableByKey: Partial<Record<SectionKey,string>> = {
   credits:"profiles",referrals:"referral_claims",settings:"site_settings",appearance:"site_settings",
   announcements:"announcements",api:"api_integrations",logs:"admin_audit_logs",developer:"developer_resources",support:"support_tickets"
 };
-const envUrl=process.env.NEXT_PUBLIC_SUPABASE_URL;
-const envKey=process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-const supabase=envUrl&&envKey?createClient(envUrl,envKey):null;
+const supabase=createClient();
 
 function valueText(value: unknown): string {
   if (value===null||value===undefined) return "—";
@@ -111,7 +110,7 @@ export default function AdminPage() {
         const allowed=(sameAuthUser || verifiedEmailMatch) &&
           profile?.role==="admin" && profile?.status==="active";
         setIsAdmin(allowed);
-        if(!allowed) setMessage("Signed in as "+(user.email||"an account")+", but this Auth identity is not linked to an active admin profile. Sign in with the email/password account or link its OAuth identity in Supabase.");
+        if(!allowed) setMessage("Signed in as "+(user.email||"an account")+", but this Auth identity is not linked to an active admin profile. Sign in with the email/password account or link its OAuth identity in Firebase.");
         else setMessage("");
       }
     } else setIsAdmin(false);
@@ -125,7 +124,7 @@ export default function AdminPage() {
         setAuthUser(null);setIsAdmin(false);setChecking(false);
         return;
       }
-      // Defer Supabase API calls until after the auth event callback returns.
+      // Defer Firebase API calls until after the auth event callback returns.
       window.setTimeout(()=>{void verify();},0);
     });
     return ()=>subscription.unsubscribe();
@@ -184,14 +183,14 @@ export default function AdminPage() {
   },[isAdmin,authUser?.id]);
 
   async function login(){
-    if(!supabase){setMessage("Supabase is not configured. Add the two NEXT_PUBLIC Supabase variables.");return;}
+    if(!supabase){setMessage("Firebase is not configured. Add the two NEXT_PUBLIC Firebase variables.");return;}
     setMessage("");
     const {error}=await supabase.auth.signInWithPassword({email,password});
     if(error)setMessage(error.message);
     else await verify();
   }
   async function oauthLogin(provider:"google"|"github"){
-    if(!supabase){setMessage("Supabase is not configured.");return;}
+    if(!supabase){setMessage("Firebase is not configured.");return;}
     setMessage("");
     const redirectTo=window.location.origin+"/auth/callback?next=%2Fadmin";
     const {error}=await supabase.auth.signInWithOAuth({
@@ -379,8 +378,8 @@ export default function AdminPage() {
   const addable=["tools","plans","announcements","api","developer","settings","appearance"].includes(section);
 
   if(checking)return <div className="admin-loading"><div className="admin-spinner"/>Checking admin access…</div>;
-  if(!supabase)return <div className="admin-auth"><div className="admin-auth-card"><div className="admin-logo"><Shield size={30}/></div><h1>Cyber<span>X</span> OSINT</h1><p>Admin panel configuration required</p><div className="admin-warning">Add NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY in your hosting environment, then redeploy.</div><a href="https://github.com/Xcyberking/CyberOsintIndia" target="_blank" rel="noreferrer">Open project repository <ArrowRight size={15}/></a></div></div>;
-  if(!authUser||!isAdmin)return <div className="admin-auth"><div className="admin-auth-card"><div className="admin-logo"><Shield size={30}/></div><h1>Cyber<span>X</span> OSINT</h1><p>{authUser?"This account does not have active admin access.":"Secure administrator sign in"}</p>{!authUser&&<><label>Email address</label><input value={email} onChange={e=>setEmail(e.target.value)} type="email" placeholder="admin@example.com"/><label>Password</label><input value={password} onChange={e=>setPassword(e.target.value)} type="password" placeholder="Your password"/><button className="admin-primary" onClick={login}><LockKeyhole size={16}/> Admin Login</button><div className="admin-oauth-divider"><span>OR CONTINUE WITH</span></div><div className="admin-oauth-grid"><button type="button" onClick={()=>void oauthLogin("google")}><Chrome size={16}/> Google</button><button type="button" onClick={()=>void oauthLogin("github")}><Github size={16}/> GitHub</button></div></>}{message&&<div className="admin-message">{message}</div>}{authUser&&!isAdmin&&<button className="admin-primary" onClick={()=>void logout()}><LogOut size={16}/> Sign out / switch account</button>}<div className="admin-auth-note">OAuth login is real Supabase Auth. Only an account whose database profile has role=admin and status=active can enter this panel.</div></div></div>;
+  if(!supabase)return <div className="admin-auth"><div className="admin-auth-card"><div className="admin-logo"><Shield size={30}/></div><h1>Cyber<span>X</span> OSINT</h1><p>Admin panel configuration required</p><div className="admin-warning">Add NEXT_PUBLIC_FIREBASE_* settings in your hosting environment, then redeploy.</div><a href="https://github.com/Xcyberking/CyberOsintIndia" target="_blank" rel="noreferrer">Open project repository <ArrowRight size={15}/></a></div></div>;
+  if(!authUser||!isAdmin)return <div className="admin-auth"><div className="admin-auth-card"><div className="admin-logo"><Shield size={30}/></div><h1>Cyber<span>X</span> OSINT</h1><p>{authUser?"This account does not have active admin access.":"Secure administrator sign in"}</p>{!authUser&&<><label>Email address</label><input value={email} onChange={e=>setEmail(e.target.value)} type="email" placeholder="admin@example.com"/><label>Password</label><input value={password} onChange={e=>setPassword(e.target.value)} type="password" placeholder="Your password"/><button className="admin-primary" onClick={login}><LockKeyhole size={16}/> Admin Login</button><div className="admin-oauth-divider"><span>OR CONTINUE WITH</span></div><div className="admin-oauth-grid"><button type="button" onClick={()=>void oauthLogin("google")}><Chrome size={16}/> Google</button><button type="button" onClick={()=>void oauthLogin("github")}><Github size={16}/> GitHub</button></div></>}{message&&<div className="admin-message">{message}</div>}{authUser&&!isAdmin&&<button className="admin-primary" onClick={()=>void logout()}><LogOut size={16}/> Sign out / switch account</button>}<div className="admin-auth-note">OAuth login is real Firebase Auth. Only an account whose database profile has role=admin and status=active can enter this panel.</div></div></div>;
 
   const navGroups=[
     {title:"OVERVIEW",keys:["dashboard","analytics","system"] as SectionKey[]},
@@ -420,8 +419,8 @@ export default function AdminPage() {
       {section==="profile"&&<section className="admin-panel" style={{maxWidth:760}}><div className="admin-panel-head"><div><h3><UserCircle size={18}/> My Administrator Profile</h3><small>View and update the profile connected to your verified admin login.</small></div><span className="admin-tag">Admin</span></div><div className="admin-info-grid"><div><small>Login email</small><b>{authUser.email||"—"}</b></div><div><small>Account role</small><b>Administrator</b></div><div><small>Auth user ID</small><b className="mono">{authUser.id}</b></div></div><div className="admin-form-grid" style={{marginTop:18}}><input value={adminProfileDraft.display_name} onChange={e=>setAdminProfileDraft(v=>({...v,display_name:e.target.value}))} placeholder="Display name" maxLength={60}/><input value={adminProfileDraft.username} onChange={e=>setAdminProfileDraft(v=>({...v,username:e.target.value.replace(/[^a-zA-Z0-9_]/g,"").slice(0,24)}))} placeholder="Username (3–24 characters)" maxLength={24}/></div><textarea value={adminProfileDraft.bio} onChange={e=>setAdminProfileDraft(v=>({...v,bio:e.target.value}))} placeholder="Profile bio" rows={4} maxLength={240} style={{width:"100%",marginTop:12}}/><div className="admin-form-foot"><button className="admin-primary" disabled={adminProfileSaving} onClick={()=>void saveAdminProfile()}><Save size={15}/>{adminProfileSaving?"Saving…":"Save profile"}</button></div></section>}
       {section==="referrals"&&<section className="admin-panel" style={{marginBottom:18}}><div className="admin-panel-head"><div><h3><Users size={18}/> Referral Reward Settings</h3><small>Set signup and referral credits. Rewards are issued once after email confirmation.</small></div></div><div className="admin-form-grid"><label>Normal signup credits<input type="number" min="0" max="2147483647" step="1" value={referralRewardForm.signup} onChange={e=>setReferralRewardForm(v=>({...v,signup:e.target.value}))}/></label><label>Referred user's credits<input type="number" min="0" max="2147483647" step="1" value={referralRewardForm.referred} onChange={e=>setReferralRewardForm(v=>({...v,referred:e.target.value}))}/></label><label>Referrer reward credits<input type="number" min="0" max="2147483647" step="1" value={referralRewardForm.referrer} onChange={e=>setReferralRewardForm(v=>({...v,referrer:e.target.value}))}/></label></div><div className="admin-form-foot"><button className="admin-primary" disabled={referralSettingsSaving} onClick={()=>void saveReferralSettings()}>{referralSettingsSaving?"Saving…":"Save referral rewards"}</button></div><p className="admin-hint">New users without a referral link receive the normal signup amount. Users who register through a valid referral link receive the referred-user amount, and the owner of that link receives the referrer amount.</p></section>}
       {section==="analytics"&&<div className="admin-stat-grid">{Object.entries(counts).map(([key,value])=><div className="admin-stat" key={key}><div><small>{key.replaceAll("_"," ")}</small><b>{value.toLocaleString()}</b></div><span><Activity size={21}/></span></div>)}</div>}
-      {section==="system"&&<div className="admin-panel"><h3><Server size={18}/> Runtime information</h3><div className="admin-info-grid"><div><small>Framework</small><b>Next.js 15</b></div><div><small>Runtime</small><b>Node.js</b></div><div><small>Database</small><b>Supabase PostgreSQL</b></div><div><small>Authentication</small><b>Supabase Auth</b></div><div><small>Admin authorization</small><b>Database role + RLS</b></div><div><small>Environment</small><b>{process.env.NODE_ENV}</b></div></div><p className="admin-hint">This panel reports configured integrations only; it does not invent CPU, storage or uptime metrics that the hosting provider has not supplied.</p></div>}
-      {section==="backup"&&<div className="admin-panel"><h3><Database size={18}/> Backup & Restore</h3><div className="admin-warning">Database backups are controlled by your Supabase project and plan. This page does not claim to create a backup from the browser.</div><ol className="admin-steps"><li>Open your Supabase project dashboard.</li><li>Use Database backups / Point-in-Time Recovery if enabled on your plan.</li><li>Before restoring, verify the target project and the backup timestamp.</li><li>After restore, run the app build and verify Auth, RLS and table access.</li></ol><a className="admin-primary-link" href="https://supabase.com/dashboard/projects" target="_blank" rel="noreferrer">Open Supabase dashboard <ArrowRight size={15}/></a></div>}
+      {section==="system"&&<div className="admin-panel"><h3><Server size={18}/> Runtime information</h3><div className="admin-info-grid"><div><small>Framework</small><b>Next.js 15</b></div><div><small>Runtime</small><b>Node.js</b></div><div><small>Database</small><b>Firebase PostgreSQL</b></div><div><small>Authentication</small><b>Firebase Auth</b></div><div><small>Admin authorization</small><b>Database role + RLS</b></div><div><small>Environment</small><b>{process.env.NODE_ENV}</b></div></div><p className="admin-hint">This panel reports configured integrations only; it does not invent CPU, storage or uptime metrics that the hosting provider has not supplied.</p></div>}
+      {section==="backup"&&<div className="admin-panel"><h3><Database size={18}/> Backup & Restore</h3><div className="admin-warning">Database backups are controlled by your Firebase project and plan. This page does not claim to create a backup from the browser.</div><ol className="admin-steps"><li>Open your Firebase project dashboard.</li><li>Use Database backups / Point-in-Time Recovery if enabled on your plan.</li><li>Before restoring, verify the target project and the backup timestamp.</li><li>After restore, run the app build and verify Auth, RLS and table access.</li></ol><a className="admin-primary-link" href="https://supabase.com/dashboard/projects" target="_blank" rel="noreferrer">Open Firebase dashboard <ArrowRight size={15}/></a></div>}
       {section==="about"&&<div className="admin-panel"><div className="admin-about-logo"><Shield size={42}/></div><h2>CyberX OSINT</h2><p>Public-source research workspace with an Android-first interface and database-protected administration.</p><div className="admin-warning">Safety scope: public technical metadata and public links only. No private-person tracking, account intrusion, password discovery, leaked personal-data search, or precise location claims.</div><a href="https://github.com/Xcyberking/CyberOsintIndia" target="_blank" rel="noreferrer">Repository <ArrowRight size={15}/></a></div>}
       {section==="settings"&&<section className="admin-panel" style={{marginBottom:18}}>
         <div className="admin-panel-head"><div><h3><CreditCard size={18}/> Manual UPI / QR Payments</h3><small>Razorpay is not used. Admin approval is required for every wallet deposit.</small></div><span className="admin-tag">Manual verification</span></div>
