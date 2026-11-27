@@ -16,11 +16,16 @@ service cloud.firestore {
         && request.resource.data.wallet_balance == resource.data.wallet_balance);
       allow delete: if admin();
     }
-    match /{collection}/{docId} {
-      allow read: if admin() || (signedIn() && resource.data.user_id == request.auth.uid)
-        || (collection in ['tools','premium_plans','site_settings','announcements'] && resource.data.enabled != false && resource.data.is_active != false && resource.data.active != false);
-      allow create, update, delete: if admin();
-    }
-    match /{document=**} { allow read, write: if false; }
+    match /tools/{id} { allow read: if signedIn() && (admin() || resource.data.enabled == true); allow write: if admin(); }
+    match /premium_plans/{id} { allow read: if signedIn() && (admin() || resource.data.is_active == true); allow write: if admin(); }
+    match /site_settings/{id} { allow read: if signedIn(); allow write: if admin(); }
+    match /announcements/{id} { allow read: if signedIn() && (admin() || resource.data.active == true); allow write: if admin(); }
+    match /search_history/{id} { allow read, delete: if signedIn() && (admin() || resource.data.user_id == request.auth.uid); allow create: if signedIn() && request.resource.data.user_id == request.auth.uid; allow update: if false; }
+    match /payment_records/{id} { allow read: if signedIn() && (admin() || resource.data.user_id == request.auth.uid); allow create: if signedIn() && request.resource.data.user_id == request.auth.uid && request.resource.data.status == 'pending'; allow update, delete: if admin(); }
+    match /wallet_transactions/{id} { allow read: if signedIn() && (admin() || resource.data.user_id == request.auth.uid); allow write: if admin(); }
+    match /credit_transactions/{id} { allow read: if signedIn() && (admin() || resource.data.user_id == request.auth.uid); allow write: if admin(); }
+    match /referral_claims/{id} { allow read: if signedIn() && (admin() || resource.data.referrer_id == request.auth.uid || resource.data.referred_id == request.auth.uid); allow write: if admin(); }
+    match /support_tickets/{id} { allow read: if signedIn() && (admin() || resource.data.user_id == request.auth.uid); allow create: if signedIn() && request.resource.data.user_id == request.auth.uid; allow update, delete: if admin(); }
+    match /{collection}/{id} { allow read, write: if admin(); }
   }
 }
