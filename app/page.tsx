@@ -112,30 +112,43 @@ export default function HomePage() {
   useEffect(() => {
     if (!backend) { setAuthMessage("Firebase is not configured. Add the six NEXT_PUBLIC_FIREBASE_* values in your hosting settings."); setPage("Login"); return; }
     let active = true;
-    void Promise.all([
-      backend.from("tools").select("slug,name,description,category,enabled,handler,credit_cost,price_inr,input_label,result_note,created_at,config").eq("enabled",true).order("created_at",{ascending:false}),
-      backend.from("premium_plans").select("id,name,description,price_inr,credits,duration_days").eq("is_active",true).order("price_inr"),
-      backend.from("site_settings").select("key,value").in("key",["payment_qr_url","payment_instructions","payment_upi_id","default_signup_credits","referral_new_user_credits","referral_reward"])
-    ]).then(([t,p,s])=>{
-      if(!active)return;
-      if(t.data){const toolRows=t.data as typeof dbTools;setDbTools(toolRows);}
-      if(p.data)setPlans(p.data as typeof plans);
-      const settings=Object.fromEntries((s.data||[]).map((row:{key:string;value:unknown})=>[row.key,row.value]));
-      setPaymentQr(String(settings.payment_qr_url||"").replace(/^"|"$/g,""));
-      setPaymentInstructions(String(settings.payment_instructions||"").replace(/^"|"$/g,""));
-      setPaymentUpiId(String(settings.payment_upi_id||"").replace(/^"|"$/g,""));
-      const rewardCredits=(value:unknown,fallback:number)=>{const raw=value&&typeof value==="object"?(value as {credits?:unknown}).credits:value;const n=Number(raw);return Number.isSafeInteger(n)&&n>=0?n:fallback;};
-      setReferralRewards({signup:rewardCredits(settings.default_signup_credits,3),referred:rewardCredits(settings.referral_new_user_credits,7),referrer:rewardCredits(settings.referral_reward,3)});
-    });
+    let catalogJob: Promise<void> | null = null;
+    const loadPublicCatalog = () => {
+      if (catalogJob) return catalogJob;
+      catalogJob = (async () => {
+        // Firebase restores the persisted Auth user asynchronously. Never read
+        // Firestore collections before authStateReady/onAuthStateChanged.
+        const [t,p,settingsResult] = await Promise.all([
+          backend.from("tools").select("slug,name,description,category,enabled,handler,credit_cost,price_inr,input_label,result_note,created_at,config").eq("enabled",true).order("created_at",{ascending:false}),
+          backend.from("premium_plans").select("id,name,description,price_inr,credits,duration_days").eq("is_active",true).order("price_inr"),
+          backend.from("site_settings").select("key,value").in("key",["payment_qr_url","payment_instructions","payment_upi_id","default_signup_credits","referral_new_user_credits","referral_reward"])
+        ]);
+        if (!active) return;
+        if (t.error) setAuthMessage("Could not load administrator tools: "+t.error.message);
+        else setDbTools((t.data||[]) as typeof dbTools);
+        if (p.error) setStoreMessage("Could not load Store plans: "+p.error.message);
+        else if(p.data) setPlans(p.data as typeof plans);
+        if (settingsResult.error) setStoreMessage("Could not load payment settings: "+settingsResult.error.message);
+        else {
+          const settings=Object.fromEntries((settingsResult.data||[]).map((row:{key:string;value:unknown})=>[row.key,row.value]));
+          setPaymentQr(String(settings.payment_qr_url||"").replace(/^"|"$/g,""));
+          setPaymentInstructions(String(settings.payment_instructions||"").replace(/^"|"$/g,""));
+          setPaymentUpiId(String(settings.payment_upi_id||"").replace(/^"|"$/g,""));
+          const rewardCredits=(value:unknown,fallback:number)=>{const raw=value&&typeof value==="object"?(value as {credits?:unknown}).credits:value;const n=Number(raw);return Number.isSafeInteger(n)&&n>=0?n:fallback;};
+          setReferralRewards({signup:rewardCredits(settings.default_signup_credits,3),referred:rewardCredits(settings.referral_new_user_credits,7),referrer:rewardCredits(settings.referral_reward,3)});
+        }
+      })().finally(()=>{catalogJob=null;});
+      return catalogJob;
+    };
     void backend.auth.getSession().then(({ data }: {data:{session:{user:any}|null}}) => {
       if(!active)return;
-      if(data.session?.user){void hydrateUser(data.session.user);setPage("Home");}
+      if(data.session?.user){void hydrateUser(data.session.user);setPage("Home");void loadPublicCatalog();}
       else setPage("Login");
     });
     const { data: { subscription } } = backend.auth.onAuthStateChange((_event: string, session: {user:any}|null) => {
       if (!active) return;
-      if (!session) { setUserEmail(""); setUserId(""); setProfileName(""); setProfileBio(""); setHistory([]); setPage("Login"); }
-      else { setUserEmail(session.user.email || ""); setPage("Home"); Promise.resolve().then(() => void hydrateUser(session.user)); }
+      if (!session) { setUserEmail(""); setUserId(""); setProfileName(""); setProfileBio(""); setHistory([]); setDbTools([]); setPlans([]); setPaymentQr(""); setPaymentInstructions(""); setPaymentUpiId(""); setPage("Login"); }
+      else { setUserEmail(session.user.email || ""); setPage("Home"); Promise.resolve().then(() => { void hydrateUser(session.user); void loadPublicCatalog(); }); }
     });
     return () => { active = false; subscription.unsubscribe(); };
   }, []);
