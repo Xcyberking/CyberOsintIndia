@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { adminDb, verifyBearer } from "@/lib/firebase/admin";
 import { chargeTool, refundCharge } from "@/lib/firebase/wallet";
+import { getEnabledSupabaseTool } from "@/lib/supabase/rest";
 export const runtime = "nodejs";
 function safeTemplate(template: string) {
   if (!template.startsWith("https://") || (template.match(/\{\}/g) || []).length !== 1) throw new Error("Tool endpoint must be HTTPS and contain exactly one {} placeholder.");
@@ -19,14 +20,13 @@ export async function POST(request: Request) {
     const db = adminDb();
     const profile = await db.collection("profiles").doc(decoded.uid).get();
     if (!profile.exists || profile.data()?.status !== "active") return NextResponse.json({ error: "Account is not active." }, { status: 403 });
-    const snap = await db.collection("tools").where("slug", "==", String(slug)).limit(1).get();
-    if (snap.empty || snap.docs[0].data().enabled !== true) return NextResponse.json({ error: "Tool unavailable." }, { status: 404 });
-    const tool = snap.docs[0].data();
+    const tool = await getEnabledSupabaseTool(String(slug));
+    if (!tool) return NextResponse.json({ error: "Tool unavailable." }, { status: 404 });
     const template = String(tool.config?.api_url || "");
     safeTemplate(template);
 
     // Charge first (admin-set price per query). If the upstream call fails the charge is refunded.
-    const charge = await chargeTool(db, decoded.uid, String(slug));
+    const charge = await chargeTool(db, decoded.uid, String(slug), tool);
     if (charge.chargeId) refund = () => refundCharge(db, decoded.uid, charge.chargeId);
 
     const response = await fetch(template.replace("{}", encodeURIComponent(search)), { redirect: "error", signal: AbortSignal.timeout(15000), headers: { Accept: "application/json, text/plain;q=0.9, */*;q=0.1" } });
