@@ -173,16 +173,6 @@ export default function AdminPage() {
     return ()=>{active=false;};
   },[isAdmin]);
   useEffect(()=>{
-    if(!backend||!isAdmin)return;
-    let active=true;
-    void backend.from("site_settings").select("value").eq("key","hidden_builtin_tools").maybeSingle().then(({data,error}:{data:{value?:unknown}|null;error:{message:string}|null})=>{
-      if(!active)return;
-      if(error){setMessage("Could not load built-in tool visibility: "+error.message);return;}
-      setHiddenBuiltinTools(Array.isArray(data?.value)?data.value.map(String):[]);
-    });
-    return ()=>{active=false;};
-  },[isAdmin]);
-  useEffect(()=>{
     if(!backend||!isAdmin||!authUser)return;
     let active=true;
     void backend.from("profiles").select("display_name,username,bio").eq("id",authUser.id).maybeSingle().then(({data,error}:{data:Record<string,unknown>|null;error:{message:string}|null})=>{
