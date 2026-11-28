@@ -95,24 +95,43 @@ const authUser = (user: any) => user ? ({
 }) : null;
 
 class QueryBuilder {
-  table: string; filters: any[] = []; sortSpec: { field: string; dir: "asc" | "desc" }[] = []; max = 0; action = "select";
+  table: string; filters: any[] = []; supabaseFilters: {field:string;op:"eq"|"neq"|"in"|"ilike";value:any}[] = []; sortSpec: { field: string; dir: "asc" | "desc" }[] = []; max = 0; action = "select";
   payload: AnyRow | AnyRow[] = {}; columns = "*"; opts: any = {}; idEq = "";
   constructor(table: string) { this.table = table; }
   select(columns = "*", opts: any = {}) { this.columns = columns; this.opts = opts; return this; }
   // eq("id", x) reads the document by its id, so it works even if the stored doc has no `id` field.
-  eq(field: string, value: any) { if (field === "id") this.idEq = String(value); else this.filters.push(where(field, "==", value)); return this; }
-  neq(field: string, value: any) { this.filters.push(where(field, "!=", value)); return this; }
-  in(field: string, values: any[]) { this.filters.push(where(field, "in", values)); return this; }
-  ilike(field: string, value: string) { this.filters.push({ field, value: value.replaceAll("%", "").toLowerCase(), ilike: true }); return this; }
+  eq(field: string, value: any) { if (field === "id") this.idEq = String(value); else this.filters.push(where(field, "==", value)); this.supabaseFilters.push({field,op:"eq",value}); return this; }
+  neq(field: string, value: any) { this.filters.push(where(field, "!=", value)); this.supabaseFilters.push({field,op:"neq",value}); return this; }
+  in(field: string, values: any[]) { this.filters.push(where(field, "in", values)); this.supabaseFilters.push({field,op:"in",value:values}); return this; }
+  ilike(field: string, value: string) { this.filters.push({ field, value: value.replaceAll("%", "").toLowerCase(), ilike: true }); this.supabaseFilters.push({field,op:"ilike",value}); return this; }
   // Sorting is done in the browser so documents that lack the sort field are not silently dropped
   // and no composite Firestore index is required.
   order(field: string, options: any = {}) { this.sortSpec.push({ field, dir: options.ascending === false ? "desc" : "asc" }); return this; }
   limit(value: number) { this.max = value; return this; }
   insert(value: AnyRow | AnyRow[]) { this.action = "insert"; this.payload = value; return this; }
-  upsert(value: AnyRow | AnyRow[], _options?: any) { this.action = "upsert"; this.payload = value; return this; }
+  upsert(value: AnyRow | AnyRow[], options?: any) { this.action = "upsert"; this.payload = value; this.opts = {...this.opts,...options}; return this; }
   update(value: AnyRow) { this.action = "update"; this.payload = value; return this; }
   delete() { this.action = "delete"; return this; }
+  async executeSupabase() {
+    try {
+      const user = firebaseAuth?.currentUser;
+      if (!user) throw new Error("Sign in to continue.");
+      const token = await user.getIdToken();
+      const response = await fetch("/api/supabase/data", {
+        method:"POST",
+        headers:{"Content-Type":"application/json",Authorization:"Bearer "+token},
+        body:JSON.stringify({
+          table:this.table,action:this.action,columns:this.columns,filters:[...this.supabaseFilters,...(this.idEq?[{field:"id",op:"eq",value:this.idEq}]:[])],
+          order:this.sortSpec,limit:this.max,opts:this.opts,payload:this.payload
+        })
+      });
+      const body = await response.json().catch(()=>({error:{message:"Invalid server response."}}));
+      if (!response.ok || body.error) return {data:null,count:body.count??null,error:body.error||{message:"Supabase request failed."}};
+      return {data:body.data??null,count:body.count??undefined,error:null};
+    } catch (e) { return {data:null,count:null,error:err(e)}; }
+  }
   async execute() {
+    if (this.table === "tools" || this.table === "site_settings") return this.executeSupabase();
     if (!firestore || !firebaseAuth?.currentUser) return { data: null, error: { message: "Firebase is not configured or you are signed out." } };
     try {
       const col = collection(firestore, this.table);
@@ -253,8 +272,24 @@ export function createClient(_url?: string, _key?: string) {
       }
     },
     storage: { from: (bucket: string) => ({
-      upload: async (path: string, file: File, options: any = {}) => { try { if (!firebaseStorage) throw new Error("Firebase Storage is not configured. Set NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET to the bucket from this Firebase project and redeploy."); await uploadBytes(ref(firebaseStorage, bucket + "/" + path), file, { contentType: options.contentType || file.type }); return { error: null }; } catch (e) { return { error: err(e) }; } },
-      createSignedUrl: async (path: string) => { try { if (!firebaseStorage) throw new Error("Firebase Storage is not configured."); return { data: { signedUrl: await getDownloadURL(ref(firebaseStorage, bucket + "/" + path)) }, error: null }; } catch (e) { return { data: null, error: err(e) }; } }
+      upload: async (path: string, file: File, options: any = {}) => {
+        try {
+          const user=firebaseAuth?.currentUser;if(!user)throw new Error("Sign in to upload an image.");
+          const token=await user.getIdToken();const form=new FormData();form.set("operation","upload");form.set("bucket",bucket);form.set("path",path);form.set("file",file);form.set("upsert",String(Boolean(options.upsert)));
+          const response=await fetch("/api/supabase/storage",{method:"POST",headers:{Authorization:"Bearer "+token},body:form});
+          const body=await response.json().catch(()=>({error:"Invalid storage response."}));if(!response.ok)throw new Error(body.error||"Image upload failed.");
+          return {data:body.data,error:null};
+        } catch(e){return {data:null,error:err(e)};}
+      },
+      createSignedUrl: async (path: string, expiresIn=3600) => {
+        try {
+          const user=firebaseAuth?.currentUser;if(!user)throw new Error("Sign in to view this image.");
+          const token=await user.getIdToken();const form=new FormData();form.set("operation","signed-url");form.set("bucket",bucket);form.set("path",path);form.set("expiresIn",String(expiresIn));
+          const response=await fetch("/api/supabase/storage",{method:"POST",headers:{Authorization:"Bearer "+token},body:form});
+          const body=await response.json().catch(()=>({error:"Invalid storage response."}));if(!response.ok)throw new Error(body.error||"Could not create image URL.");
+          return {data:body.data,error:null};
+        } catch(e){return {data:null,error:err(e)};}
+      }
     }) },
     rpc: async (name: string, args: AnyRow = {}) => {
       try {
