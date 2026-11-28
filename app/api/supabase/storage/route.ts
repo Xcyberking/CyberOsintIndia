@@ -29,9 +29,10 @@ export async function POST(request: Request) {
     const path = safePath(String(form.get("path") || ""));
     if (!BUCKETS.has(bucket)) return NextResponse.json({error:"Unknown image bucket."},{status:400});
 
-    const decoded = operation === "upload" && bucket === "cyberx-site-media"
-      ? await requireAdmin(request)
-      : await verifyBearer(request);
+    let decoded = await verifyBearer(request);
+    if (decoded.admin === true || (operation === "upload" && bucket === "cyberx-site-media")) {
+      decoded = await requireAdmin(request);
+    }
     const isAdmin = decoded.admin === true;
     assertPathAccess(bucket,path,decoded.uid,isAdmin);
 
