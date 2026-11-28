@@ -84,6 +84,7 @@ export default function AdminPage() {
   const [adminProfileSaving,setAdminProfileSaving]=useState(false);
   const [redeemDraft,setRedeemDraft]=useState({code:"",credits:"25",maxUses:"10"});
   const [redeemSaving,setRedeemSaving]=useState(false);
+  const otpStartRef=useRef(false);
   const [otpPending,setOtpPending]=useState(false);
   const [otpChallenge,setOtpChallenge]=useState("");
   const [otpCode,setOtpCode]=useState("");
@@ -132,13 +133,14 @@ export default function AdminPage() {
             if(security.enabled&&!security.verified){
               setIsAdmin(false);
               setOtpPending(true);
-              if(!otpChallenge){
+              if(!otpStartRef.current){
+                otpStartRef.current=true;
                 const start=await fetch("/api/admin/2fa",{method:"POST",headers:{"Content-Type":"application/json",...(token?{Authorization:"Bearer "+token}:{})},body:JSON.stringify({action:"start"})});
                 const startBody=await start.json().catch(()=>({}));
                 if(start.ok&&startBody.required){setOtpChallenge(String(startBody.challengeId||""));setMessage("Telegram par OTP bhej diya gaya hai. 5 minute ke andar code verify karein.");}
-                else if(!start.ok)setMessage(startBody.error||"Telegram OTP send nahi ho saka.");
+                else if(!start.ok){otpStartRef.current=false;setMessage(startBody.error||"Telegram OTP send nahi ho saka.");}
               }else setMessage("Telegram OTP enter karke Admin Panel unlock karein.");
-            }else{setOtpPending(false);setOtpChallenge("");setOtpCode("");}
+            }else{otpStartRef.current=false;setOtpPending(false);setOtpChallenge("");setOtpCode("");}
           }catch(error){allowed=false;setMessage(error instanceof Error?error.message:"Admin security check failed.");}
         }
         setIsAdmin(allowed);
@@ -256,7 +258,7 @@ export default function AdminPage() {
     });
     if(error)setMessage(error.message);
   }
-  async function logout(){if(backend)await backend.auth.signOut();setAuthUser(null);setIsAdmin(false);setMessage("");}
+  async function logout(){if(backend){try{const {data:{user}}=await backend.auth.getUser();const token=await user?.getIdToken?.();await fetch("/api/admin/2fa",{method:"POST",headers:token?{Authorization:"Bearer "+token,"Content-Type":"application/json"}:{"Content-Type":"application/json"},body:JSON.stringify({action:"logout"})});}catch{}await backend.auth.signOut();}otpStartRef.current=false;setOtpPending(false);setOtpChallenge("");setOtpCode("");setAuthUser(null);setIsAdmin(false);setMessage("");}
   async function verifyTelegramOtp(){
     if(!backend||!authUser?.getIdToken||!otpChallenge)return;
     setSecuritySaving(true);setMessage("");
@@ -265,7 +267,7 @@ export default function AdminPage() {
       const response=await fetch("/api/admin/2fa",{method:"POST",headers:{"Content-Type":"application/json",Authorization:"Bearer "+token},body:JSON.stringify({action:"verify",challengeId:otpChallenge,otp:otpCode})});
       const body=await response.json().catch(()=>({}));
       if(!response.ok)throw new Error(body.error||"OTP verification failed.");
-      setOtpPending(false);setOtpChallenge("");setOtpCode("");
+      otpStartRef.current=false;setOtpPending(false);setOtpChallenge("");setOtpCode("");
       setMessage("Telegram verification successful. Admin session is valid for 24 hours.");
       await verify();
     }catch(error){setMessage(error instanceof Error?error.message:"OTP verification failed.");}
