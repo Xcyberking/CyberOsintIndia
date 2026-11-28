@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { adminDb, verifyBearer } from "@/lib/firebase/admin";
+import { chargeTool, refundCharge } from "@/lib/firebase/wallet";
 export const runtime = "nodejs";
 function safeTemplate(template: string) {
   if (!template.startsWith("https://") || (template.match(/\{\}/g) || []).length !== 1) throw new Error("Tool endpoint must be HTTPS and contain exactly one {} placeholder.");
@@ -9,6 +10,7 @@ function safeTemplate(template: string) {
   return url;
 }
 export async function POST(request: Request) {
+  let refund: (() => Promise<unknown>) | null = null;
   try {
     const decoded = await verifyBearer(request);
     const { slug, query } = await request.json();
@@ -21,14 +23,20 @@ export async function POST(request: Request) {
     if (snap.empty || snap.docs[0].data().enabled !== true) return NextResponse.json({ error: "Tool unavailable." }, { status: 404 });
     const tool = snap.docs[0].data();
     const template = String(tool.config?.api_url || "");
-    const target = safeTemplate(template);
+    safeTemplate(template);
+
+    // Charge first (admin-set price per query). If the upstream call fails the charge is refunded.
+    const charge = await chargeTool(db, decoded.uid, String(slug));
+    if (charge.chargeId) refund = () => refundCharge(db, decoded.uid, charge.chargeId);
+
     const response = await fetch(template.replace("{}", encodeURIComponent(search)), { redirect: "error", signal: AbortSignal.timeout(15000), headers: { Accept: "application/json, text/plain;q=0.9, */*;q=0.1" } });
     const raw = await response.text();
-    if (raw.length > 1000000) return NextResponse.json({ error: "API response exceeds 1 MB." }, { status: 502 });
-    if (!response.ok) return NextResponse.json({ error: "Configured API returned HTTP " + response.status }, { status: 502 });
+    if (raw.length > 1000000) throw new Error("API response exceeds 1 MB.");
+    if (!response.ok) throw new Error("Configured API returned HTTP " + response.status);
     let result: unknown; try { result = JSON.parse(raw); } catch { result = { response: raw }; }
-    const rpc = await fetch(new URL("/api/firebase/rpc", request.url), { method: "POST", headers: { Authorization: request.headers.get("authorization") || "", "Content-Type": "application/json" }, body: JSON.stringify({ name: "consume_tool_wallet", args: { p_tool_slug: slug } }) });
-    const balance = await rpc.json(); if (!rpc.ok) return NextResponse.json({ error: balance.error || "Wallet charge failed." }, { status: rpc.status });
-    return NextResponse.json({ ok: true, tool: tool.name, result, remaining_wallet: balance.data });
-  } catch (e) { return NextResponse.json({ error: e instanceof Error ? e.message : "Tool request failed." }, { status: 400 }); }
+    return NextResponse.json({ ok: true, tool: tool.name, result, remaining_wallet: charge.balance, charged: charge.price });
+  } catch (e) {
+    if (refund) { try { await refund(); } catch {} }
+    return NextResponse.json({ error: e instanceof Error ? e.message : "Tool request failed." }, { status: 400 });
+  }
 }
