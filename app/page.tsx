@@ -51,9 +51,7 @@ export default function HomePage() {
   const [authMessage, setAuthMessage] = useState("");
   const [authBusy, setAuthBusy] = useState(false);
   const [mobileMenu, setMobileMenu] = useState(false);
-  const [enabledToolSlugs, setEnabledToolSlugs] = useState<string[]>([]);
   const [dbTools,setDbTools]=useState<{slug:string;name:string;description:string;category:string;enabled:boolean;handler:string;credit_cost:number;price_inr:number;input_label:string;result_note:string;created_at?:string;config?:Record<string,unknown>}[]>([]);
-  const [hiddenBuiltinToolSlugs,setHiddenBuiltinToolSlugs]=useState<string[]>([]);
   const [username,setUsername]=useState(""); const [avatarUrl,setAvatarUrl]=useState("");
   const [credits,setCredits]=useState(0); const [planName,setPlanName]=useState("Free"); const [planExpires,setPlanExpires]=useState("");
   const [referralCode,setReferralCode]=useState(""); const [referralCount,setReferralCount]=useState(0); const [referralCredits,setReferralCredits]=useState(0);
@@ -117,16 +115,15 @@ export default function HomePage() {
     void Promise.all([
       backend.from("tools").select("slug,name,description,category,enabled,handler,credit_cost,price_inr,input_label,result_note,created_at,config").eq("enabled",true).order("created_at",{ascending:false}),
       backend.from("premium_plans").select("id,name,description,price_inr,credits,duration_days").eq("is_active",true).order("price_inr"),
-      backend.from("site_settings").select("key,value").in("key",["payment_qr_url","payment_instructions","payment_upi_id","hidden_builtin_tools","default_signup_credits","referral_new_user_credits","referral_reward"])
+      backend.from("site_settings").select("key,value").in("key",["payment_qr_url","payment_instructions","payment_upi_id","default_signup_credits","referral_new_user_credits","referral_reward"])
     ]).then(([t,p,s])=>{
       if(!active)return;
-      if(t.data){const toolRows=t.data as typeof dbTools;setDbTools(toolRows);setEnabledToolSlugs(toolRows.filter((row)=>row.enabled).map((row)=>row.slug));}
+      if(t.data){const toolRows=t.data as typeof dbTools;setDbTools(toolRows);}
       if(p.data)setPlans(p.data as typeof plans);
       const settings=Object.fromEntries((s.data||[]).map((row:{key:string;value:unknown})=>[row.key,row.value]));
       setPaymentQr(String(settings.payment_qr_url||"").replace(/^"|"$/g,""));
       setPaymentInstructions(String(settings.payment_instructions||"").replace(/^"|"$/g,""));
       setPaymentUpiId(String(settings.payment_upi_id||"").replace(/^"|"$/g,""));
-      setHiddenBuiltinToolSlugs(Array.isArray(settings.hidden_builtin_tools)?settings.hidden_builtin_tools.map(String):[]);
       const rewardCredits=(value:unknown,fallback:number)=>{const raw=value&&typeof value==="object"?(value as {credits?:unknown}).credits:value;const n=Number(raw);return Number.isSafeInteger(n)&&n>=0?n:fallback;};
       setReferralRewards({signup:rewardCredits(settings.default_signup_credits,3),referred:rewardCredits(settings.referral_new_user_credits,7),referrer:rewardCredits(settings.referral_reward,3)});
     });
