@@ -10,3 +10,5 @@
 .admin-support-record textarea{display:block;width:100%;min-height:82px;margin:10px 0;padding:11px 12px;border:1px solid #d8e3f1;border-radius:10px;background:#f8fbff;color:#142b50;font:inherit;resize:vertical}
 .admin-support-reply{padding:11px 12px;border:1px solid #d7e9ff;border-radius:10px;background:#f0f7ff;color:#21436f;font-size:12px}
 @media(max-width:760px){.admin-support-record{flex-wrap:wrap}.admin-support-record .admin-record-main{flex-basis:100%}.admin-support-record .admin-inline{flex-wrap:wrap}}
+
+@keyframes adminQrUpload { from { transform: translateX(-45%); } to { transform: translateX(190%); } }
