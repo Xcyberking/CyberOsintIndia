@@ -39,18 +39,6 @@ const tableByKey: Partial<Record<SectionKey,string>> = {
   announcements:"announcements",api:"api_integrations",logs:"admin_audit_logs",developer:"developer_resources",support:"support_tickets"
 };
 const backend=createClient();
-const builtInTools=[
-  {slug:"username",key:"username-tracker",name:"Username Tracker",description:"Public profile links"},
-  {slug:"email",key:"email-validator",name:"Email Validator",description:"Email syntax and public mail-domain checks"},
-  {slug:"ip",key:"ip-lookup",name:"IP Lookup",description:"Approximate public IP metadata"},
-  {slug:"domain",key:"domain-lookup",name:"Domain Analyzer",description:"Public RDAP and nameserver information"},
-  {slug:"url",key:"url-safety",name:"Website Analyzer",description:"URL structure and HTTPS checks"},
-  {slug:"dns",key:"dns-lookup",name:"DNS Lookup",description:"Public DNS records"},
-  {slug:"image",key:"reverse-image-search",name:"Reverse Image Search",description:"Public reverse-image search links"},
-  {slug:"social",key:"social-media-analyzer",name:"Social Media Analyzer",description:"Public profile links"},
-  {slug:"breach",key:"breach-self-check",name:"Breach Self-Check",description:"Official self-check resources"}
-];
-
 function valueText(value: unknown): string {
   if (value===null||value===undefined) return "—";
   if (typeof value==="object") return JSON.stringify(value);
@@ -84,7 +72,6 @@ export default function AdminPage() {
   const [paymentQrDraft,setPaymentQrDraft]=useState("");
   const [paymentInstructionsDraft,setPaymentInstructionsDraft]=useState("");
   const [paymentUpiIdDraft,setPaymentUpiIdDraft]=useState("");
-  const [hiddenBuiltinTools,setHiddenBuiltinTools]=useState<string[]>([]);
   const [ticketReplies,setTicketReplies]=useState<Record<string,string>>({});
   const [bulkCreditDelta,setBulkCreditDelta]=useState("5");
   const [bulkCreditReason,setBulkCreditReason]=useState("Administrator bulk credit grant");
@@ -409,15 +396,6 @@ export default function AdminPage() {
       if(!error)await loadRows();
     }catch(error){setGatewayMessage("Could not save payment settings: "+(error instanceof Error?error.message:"Unexpected error."));}
     finally{setPaymentSettingsSaving(false);}
-  }
-
-  async function toggleBuiltinTool(slug:string,hidden:boolean){
-    if(!backend||!authUser)return;
-    const next=hidden?Array.from(new Set([...hiddenBuiltinTools,slug])):hiddenBuiltinTools.filter(item=>item!==slug);
-    const {error}=await backend.from("site_settings").upsert({key:"hidden_builtin_tools",value:next,updated_by:authUser.id,updated_at:new Date().toISOString()},{onConflict:"key"});
-    if(error){setMessage("Could not update built-in tool: "+error.message);return;}
-    setHiddenBuiltinTools(next);
-    setMessage(hidden?"Built-in tool hidden from users.":"Built-in tool restored for users.");
   }
 
   async function uploadPaymentQr(file:File){
