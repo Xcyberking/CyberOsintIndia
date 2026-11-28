@@ -184,7 +184,7 @@ export default function HomePage() {
     setBusy(true); setError(""); setResult(null);
     let walletChargeId="";
     try {
-      const configuredTool=dbTools.find(item=>item.slug===tool);
+      const configuredTool=dbTools.find(item=>item.slug===(toolSlug[tool]||tool)||item.slug===tool);
       const configuredApi=String(configuredTool?.config?.api_url||"").trim();
       let data: unknown;
       let creditsHandledByProxy=false;
@@ -204,7 +204,7 @@ export default function HomePage() {
       // Run administrator-defined APIs on the server so browser CORS does not block results.
       if(configuredTool && configuredApi){
         if(!backend)throw new Error("Firebase Authentication is unavailable.");
-        const {data:proxyResult,error:proxyError}=await backend.functions.invoke("run-custom-tool",{body:{slug:tool,query:query.trim()}});
+        const {data:proxyResult,error:proxyError}=await backend.functions.invoke("run-custom-tool",{body:{slug:configuredTool.slug,query:query.trim()}});
         if(proxyError||proxyResult?.error)throw new Error(proxyError?.message||proxyResult.error);
         data=proxyResult.result;
         creditsHandledByProxy=true;
