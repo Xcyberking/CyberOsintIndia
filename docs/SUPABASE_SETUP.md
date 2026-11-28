@@ -1,31 +1,52 @@
 # CyberX OSINT: Firebase Auth + Supabase Tools/Images
 
-This project keeps Firebase Authentication and Firebase user profiles/wallet data. The following data is stored in the CyberOsintIndia Supabase project:
+This project keeps Firebase Authentication and Firebase user profiles/wallet data. The CyberOsintIndia Supabase project stores:
 
-- `public.tools` tool catalogue
-- `public.site_settings` public site/payment settings
-- Uploaded site images and QR codes (`cyberx-site-media`)
-- User avatars (`cyberx-avatars`)
-- Payment proof images (`cyberx-user-media`)
+- `public.tools` — administrator-managed tool catalogue
+- `public.site_settings` — public payment/site settings
+- `cyberx-site-media` — public site images and payment QR codes
+- `cyberx-avatars` — private user avatars
+- `cyberx-user-media` — private payment proof images
 
-## Vercel environment variable
+Supabase project:
 
-Add this server-only variable to the Vercel project for Production, Preview, and Development:
+- Project ref: `pwwwoppmhefscguajzwc`
+- URL: `https://pwwwoppmhefscguajzwc.supabase.co`
+- Region: `ap-south-1`
 
-- `SUPABASE_SERVICE_ROLE_KEY`: the secret/service-role API key from Supabase Project Settings → API Keys.
+## Vercel environment variables
 
-The project URL defaults to `https://pwwwoppmhefscguajzwc.supabase.co`. You can optionally set `SUPABASE_URL` to the same URL.
+The application uses these Supabase server variables:
 
-**Never** prefix the service-role/secret key with `NEXT_PUBLIC_`, place it in client-side code, or commit it to GitHub. Firebase login continues to use the existing `NEXT_PUBLIC_FIREBASE_*` variables and server-side `FIREBASE_SERVICE_ACCOUNT_JSON`.
+- `SUPABASE_URL`: the project URL above. The source code has the same default, but set it explicitly in Vercel for all environments.
+- `SUPABASE_SERVICE_ROLE_KEY`: required server-only secret/service-role key. Add it to Production, Preview, and Development.
 
-After adding the variable, redeploy the Vercel project.
+Never prefix the service-role/secret key with `NEXT_PUBLIC_`, put it in browser code, or commit it to GitHub. The server uses it only after verifying the caller's Firebase ID token and, for writes/uploads, the Firebase admin custom claim.
 
-## How authorization works
+Firebase login continues to use the existing `NEXT_PUBLIC_FIREBASE_*` variables and server-side `FIREBASE_SERVICE_ACCOUNT_JSON`.
 
-The browser continues to sign in with Firebase. Server API routes verify the Firebase ID token. Tool/settings mutations and site QR uploads additionally require the Firebase admin custom claim. The server uses the Supabase service-role key only after those checks; it is never sent to the browser.
+## Authorization model
 
-Public users can read enabled tools and approved public payment settings. Private user media is scoped to the Firebase UID in the object path. Site media is served from a public Supabase Storage bucket, while only admins can upload it.
+- Browser login/register/Google login remains Firebase Authentication.
+- Next.js API routes verify Firebase ID tokens.
+- Tool and payment-setting writes require a Firebase admin claim.
+- Public tool reads are restricted to enabled tools by the API route and RLS.
+- Public site-setting reads are restricted to approved payment/reward keys.
+- The Supabase service-role key is never sent to the browser.
+- User media paths are scoped to the Firebase UID; site-media upload is admin-only.
 
-## Existing data
+## Database and Storage setup
 
-The Supabase `CyberOsintIndia` project already contained the tools and site settings tables. The migration added `price_inr`, exposed the UPI setting to public Store reads, and created the public `cyberx-site-media` bucket. All existing tools are disabled by default, so the public catalogue starts empty; the administrator can enable a suitable existing entry or create a new tool. The admin panel imports any non-duplicate legacy Firestore tools once after admin login.
+The existing `CyberOsintIndia` database already has the required `tools` and `site_settings` tables, with RLS enabled. The following migrations are recorded in the project:
+
+- `firebase_auth_supabase_tools_and_site_media`
+- `hide_legacy_seeded_tools_for_admin_only_catalog`
+- `restore_legacy_custom_tool_endpoint_in_config`
+- `start_tool_catalog_empty_until_admin_enables_tools`
+- `restrict_firebase_bridge_table_writes`
+
+The last migration removes direct INSERT/UPDATE/DELETE privileges from Supabase `anon` and `authenticated` roles on `tools` and `site_settings`; Firebase-verified server routes use `service_role` for authorized writes. The database currently has 11 legacy tool rows and 0 enabled tools, so the public catalogue starts empty until the administrator enables or creates tools.
+
+All three required Storage buckets already exist. `cyberx-site-media` is public-read with a 2 MB image limit; avatar and user-media buckets are private with a 5 MB image limit. New uploads are handled by the server-side Firebase-authenticated API routes.
+
+After adding `SUPABASE_SERVICE_ROLE_KEY` in Vercel, redeploy the project. Do not send the key in chat or commit it.
