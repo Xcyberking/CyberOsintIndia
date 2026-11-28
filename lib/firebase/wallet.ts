@@ -22,7 +22,7 @@ export async function walletStatus(db: Firestore, uid: string, slug: string) {
 }
 
 // Atomically deduct the admin-set price of one query from the user's wallet.
-export async function chargeTool(db: Firestore, uid: string, slug: string, toolOverride?: Record<string, unknown>) {
+export async function chargeTool(db: Firestore, uid: string, slug: string, toolOverride?: any) {
   const tool = toolOverride || await findTool(db, slug);
   const price = r2(Math.max(0, Number(tool.price_inr || 0)));
   const ref = db.collection("profiles").doc(uid);
