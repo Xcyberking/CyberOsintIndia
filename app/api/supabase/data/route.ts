@@ -41,7 +41,8 @@ export async function POST(request: Request) {
     const action = body.action || "select";
     if (!TABLES.has(table)) return NextResponse.json({error:"This data collection is not available through this endpoint."},{status:400});
     const isWrite = action !== "select";
-    const decoded = isWrite ? await requireAdmin(request) : await verifyBearer(request);
+    let decoded = isWrite ? await requireAdmin(request) : await verifyBearer(request);
+    if (!isWrite && decoded.admin === true) decoded = await requireAdmin(request);
     const isAdmin = decoded.admin === true;
     if (isWrite && !isAdmin) return NextResponse.json({error:"Administrator permission required."},{status:403});
 
