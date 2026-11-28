@@ -1,8 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createClient } from "@/lib/firebase/compat";
-type AuthUser = { id: string; email?: string | null; email_confirmed_at?: string | null; getIdTokenResult?: () => Promise<{claims:Record<string,unknown>}> };
+type AuthUser = { id: string; email?: string | null; email_confirmed_at?: string | null; getIdToken?: () => Promise<string>; getIdTokenResult?: () => Promise<{claims:Record<string,unknown>}> };
 import {
   Activity, ArrowDownToLine, ArrowLeft, ArrowRight, Bell, BookOpen, CheckCircle2,
   ChevronRight, CircleHelp, Code2, Coins, CreditCard, Database, FileClock,
@@ -156,6 +156,28 @@ export default function AdminPage() {
     setCounts(Object.fromEntries(results));
   },[isAdmin]);
   useEffect(()=>{void loadCounts();},[loadCounts]);
+  const legacyMigrationStarted=useRef(false);
+  useEffect(()=>{
+    if(!isAdmin||!authUser?.getIdToken||legacyMigrationStarted.current)return;
+    legacyMigrationStarted.current=true;
+    let active=true;
+    void (async()=>{
+      try{
+        const token=await authUser.getIdToken!();
+        const response=await fetch("/api/supabase/migrate-firestore-tools",{method:"POST",headers:{Authorization:"Bearer "+token}});
+        const result=await response.json().catch(()=>({}));
+        if(!active)return;
+        if(!response.ok)throw new Error(result.error||"Could not import existing tools.");
+        if(Number(result.migrated)>0){
+          setMessage(String(result.migrated)+" previous tool(s) imported into Supabase.");
+          await loadRows();await loadCounts();
+        }
+      }catch(error){
+        if(active)setMessage("Legacy tool import: "+(error instanceof Error?error.message:"Could not complete migration."));
+      }
+    })();
+    return ()=>{active=false;};
+  },[isAdmin,authUser,loadRows,loadCounts]);
   useEffect(()=>{
     if(!backend||!isAdmin)return;
     void backend.from("premium_plans").select("id,name,credits,duration_days").order("name").then(({data}:{data:unknown[]|null})=>setAdminPlans((data||[]) as typeof adminPlans));
