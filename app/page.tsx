@@ -187,7 +187,6 @@ export default function HomePage() {
       const configuredTool=dbTools.find(item=>item.slug===(toolSlug[tool]||tool)||item.slug===tool);
       const configuredApi=String(configuredTool?.config?.api_url||"").trim();
       let data: unknown;
-      let creditsHandledByProxy=false;
       // Custom HTTPS APIs are charged atomically by their server proxy. Built-in tools
       // are charged here through the same admin-priced Supabase catalogue.
       if(!(configuredTool && configuredApi)){
@@ -207,7 +206,6 @@ export default function HomePage() {
         const {data:proxyResult,error:proxyError}=await backend.functions.invoke("run-custom-tool",{body:{slug:configuredTool.slug,query:query.trim()}});
         if(proxyError||proxyResult?.error)throw new Error(proxyError?.message||proxyResult.error);
         data=proxyResult.result;
-        creditsHandledByProxy=true;
         if(typeof proxyResult.remaining_wallet==="number")setWalletBalance(proxyResult.remaining_wallet);
       } else if (tool === "ip") {
         const response = await fetch("/api/ip?address=" + encodeURIComponent(query.trim()));
