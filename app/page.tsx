@@ -51,7 +51,7 @@ export default function HomePage() {
   const [authMessage, setAuthMessage] = useState("");
   const [authBusy, setAuthBusy] = useState(false);
   const [mobileMenu, setMobileMenu] = useState(false);
-  const [enabledToolSlugs, setEnabledToolSlugs] = useState<string[]>(["username-tracker","email-validator","ip-lookup","domain-lookup","url-safety","dns-lookup","reverse-image-search","social-media-analyzer","breach-self-check"]);
+  const [enabledToolSlugs, setEnabledToolSlugs] = useState<string[]>([]);
   const [dbTools,setDbTools]=useState<{slug:string;name:string;description:string;category:string;enabled:boolean;handler:string;credit_cost:number;price_inr:number;input_label:string;result_note:string;created_at?:string;config?:Record<string,unknown>}[]>([]);
   const [hiddenBuiltinToolSlugs,setHiddenBuiltinToolSlugs]=useState<string[]>([]);
   const [username,setUsername]=useState(""); const [avatarUrl,setAvatarUrl]=useState("");
@@ -74,18 +74,15 @@ export default function HomePage() {
 
   const toolSlug: Record<ToolKey,string> = { username:"username-tracker", email:"email-validator", ip:"ip-lookup", domain:"domain-lookup", url:"url-safety", dns:"dns-lookup", image:"reverse-image-search", social:"social-media-analyzer", breach:"breach-self-check" };
   const iconFor=(name:string)=>({Globe:Globe2,Globe2,Search,Compass:Compass,Mail,Wifi,Network,Shield:ShieldCheck,Image:ImageIcon,Users,User:UserRoundSearch,Database,Link:Link2,Wrench}[name]||Wrench);
+  // Only administrator-created database tools are available to users.
+  // The tools table is loaded newest-first, so new tools appear first everywhere.
   const enabledDbTools=dbTools.filter(item=>item.enabled);
-  const databaseToolCards:ToolInfo[]=enabledDbTools.map(item=>{
+  const visibleTools:ToolInfo[]=enabledDbTools.map(item=>{
     const built=tools.find(t=>toolSlug[t.key]===item.slug);
     return built?{...built,title:item.name||built.title,description:item.description||built.description,category:item.category||built.category}
       :{key:item.slug,title:item.name,description:item.description,category:item.category,icon:iconFor(String(item.config?.icon||"Wrench"))};
   });
-  const databaseSlugs=new Set(enabledDbTools.map(item=>item.slug));
-  const builtinCards=tools.filter(item=>!hiddenBuiltinToolSlugs.includes(toolSlug[item.key])&&!databaseSlugs.has(toolSlug[item.key]));
-  // Admin-added database tools are already ordered newest-first by created_at.
-  // Keep them before built-ins without hiding the original catalogue.
-  const visibleTools:ToolInfo[]=[...databaseToolCards,...builtinCards];
-  const selectedTool = useMemo(() => visibleTools.find(item=>item.key===tool)||tools.find(item=>item.key===tool)||{key:tool,title:dbTools.find(x=>x.slug===tool)?.name||tool,description:dbTools.find(x=>x.slug===tool)?.description||"Custom administrator tool",icon:Wrench,category:"Custom"},[tool,visibleTools,dbTools]);
+  const selectedTool = useMemo(() => visibleTools.find(item=>item.key===tool)||{key:tool,title:dbTools.find(x=>x.slug===tool)?.name||tool,description:dbTools.find(x=>x.slug===tool)?.description||"Administrator tool",icon:Wrench,category:"Custom"},[tool,visibleTools,dbTools]);
 
   async function hydrateUser(user: { id: string; email?: string | null; user_metadata?: Record<string, unknown> }) {
     if (!backend) return;
