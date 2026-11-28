@@ -12,3 +12,18 @@
 @media(max-width:760px){.admin-support-record{flex-wrap:wrap}.admin-support-record .admin-record-main{flex-basis:100%}.admin-support-record .admin-inline{flex-wrap:wrap}}
 
 @keyframes adminQrUpload { from { transform: translateX(-45%); } to { transform: translateX(190%); } }
+
+/* Mobile tool-management rows: keep long API URLs readable and actions tappable. */
+@media (max-width: 640px) {
+  .admin-records { padding-left: 12px; padding-right: 12px; }
+  .admin-record { display: grid; grid-template-columns: 38px minmax(0,1fr) auto; align-items: start; column-gap: 10px; row-gap: 10px; }
+  .admin-record-icon { grid-column: 1; grid-row: 1; }
+  .admin-record-main { grid-column: 2 / 4; grid-row: 1; min-width: 0; width: 100%; }
+  .admin-record-main strong { font-size: 13px; line-height: 1.35; }
+  .admin-record-main small { font-size: 11px; overflow-wrap: anywhere; word-break: break-word; }
+  .admin-record .admin-switch { grid-column: 1 / 2; grid-row: 2; justify-self: center; align-self: center; }
+  .admin-record .admin-tag { grid-column: 2 / 4; grid-row: 2; justify-self: start; }
+  .admin-record .admin-small { grid-row: 3; min-height: 40px; font-size: 12px; padding: 9px 13px; }
+  .admin-record .admin-small:first-of-type { grid-column: 2; }
+  .admin-record .admin-small:last-of-type { grid-column: 3; }
+}
