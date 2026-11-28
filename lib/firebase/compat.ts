@@ -288,7 +288,16 @@ export function createClient(_url?: string, _key?: string) {
           const response=await fetch("/api/supabase/storage",{method:"POST",headers:{Authorization:"Bearer "+token},body:form});
           const body=await response.json().catch(()=>({error:"Invalid storage response."}));if(!response.ok)throw new Error(body.error||"Could not create image URL.");
           return {data:body.data,error:null};
-        } catch(e){return {data:null,error:err(e)};}
+        } catch(e){
+          // Read-only compatibility fallback for files uploaded before the move.
+          // All new uploads are sent to Supabase Storage.
+          try {
+            if(firebaseStorage && (bucket==="cyberx-avatars" || bucket==="cyberx-user-media")) {
+              return {data:{signedUrl:await getDownloadURL(ref(firebaseStorage,bucket+"/"+path))},error:null};
+            }
+          } catch {}
+          return {data:null,error:err(e)};
+        }
       }
     }) },
     rpc: async (name: string, args: AnyRow = {}) => {
