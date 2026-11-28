@@ -274,7 +274,12 @@ export default function AdminPage() {
       } else {
         delete config.api_url;
       }
-      payload={slug:String(current?.slug||(form.name||"").toLowerCase().trim().replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,"")),name:form.name||"",description:form.description||"",category:form.category||"Research",handler,input_label:form.input_label||"Enter query",credit_cost:0,price_inr:queryPrice,enabled:form.enabled===undefined?!editingToolId:form.enabled==="true",config};
+      const slug=String(current?.slug||(form.name||"").toLowerCase().trim().replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,""));
+      if(!slug){setMessage("Tool name must contain at least one English letter or number.");setSaving(false);return;}
+      const duplicate=await backend.from("tools").select("id,slug").eq("slug",slug);
+      if(duplicate.error){setMessage("Could not validate tool name: "+duplicate.error.message);setSaving(false);return;}
+      if((duplicate.data||[]).some((row:Row)=>String(row.id)!==String(current?.id||""))){setMessage("A tool with this name already exists. Choose a different name.");setSaving(false);return;}
+      payload={id:String(current?.id||slug),slug,name:form.name.trim(),description:form.description||"",category:form.category||"Research",handler,input_label:form.input_label||"Enter query",credit_cost:0,price_inr:queryPrice,enabled:form.enabled===undefined?!editingToolId:form.enabled==="true",config};
     }
     else if(section==="plans") payload={name:form.name||"",description:form.description||"",price_inr:Number(form.price||0),credits:Number(form.credits||0),duration_days:Number(form.duration||30),is_active:true};
     else if(section==="announcements") payload={title:form.name||"",body:form.description||"",active:form.enabled==="true",is_published:form.enabled==="true",created_by:authUser?.id};
@@ -285,10 +290,15 @@ export default function AdminPage() {
       try{parsed=JSON.parse(form.value||"{}");}catch{setMessage("Value must be valid JSON.");setSaving(false);return;}
       payload={key:form.name||"",value:parsed,updated_by:authUser?.id,updated_at:new Date().toISOString()};
     } else {setSaving(false);return;}
-    const {error}=await (section==="settings"||section==="appearance" ? backend.from(active.table).upsert(payload) : section==="tools"&&editingToolId ? backend.from("tools").update(payload).eq("id",editingToolId) : backend.from(active.table).insert(payload));
-    if(error)setMessage(error.message);
-    else {setForm({});setEditingToolId("");setMessage("Saved successfully.");await loadRows();await loadCounts();}
-    setSaving(false);
+    try {
+      const {error}=await (section==="settings"||section==="appearance" ? backend.from(active.table).upsert(payload) : section==="tools"&&editingToolId ? backend.from("tools").update(payload).eq("id",editingToolId) : backend.from(active.table).insert(payload));
+      if(error)setMessage("Save failed: "+error.message);
+      else {setForm({});setEditingToolId("");setMessage(section==="tools"?"Tool saved successfully and is now available according to its visibility setting.":"Saved successfully.");await loadRows();await loadCounts();}
+    } catch(error) {
+      setMessage("Save failed: "+(error instanceof Error?error.message:"Unexpected Firebase error."));
+    } finally {
+      setSaving(false);
+    }
   }
 
   async function updateUser(id:string){
