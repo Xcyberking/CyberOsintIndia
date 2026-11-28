@@ -279,7 +279,7 @@ export default function AdminPage() {
       const duplicate=await backend.from("tools").select("id,slug").eq("slug",slug);
       if(duplicate.error){setMessage("Could not validate tool name: "+duplicate.error.message);setSaving(false);return;}
       if((duplicate.data||[]).some((row:Row)=>String(row.id)!==String(current?.id||""))){setMessage("A tool with this name already exists. Choose a different name.");setSaving(false);return;}
-      payload={id:String(current?.id||slug),slug,name:form.name.trim(),description:form.description||"",category:form.category||"Research",handler,input_label:form.input_label||"Enter query",credit_cost:0,price_inr:queryPrice,enabled:form.enabled===undefined?!editingToolId:form.enabled==="true",config};
+      payload={...(current?.id?{id:current.id}:{}),slug,name:form.name.trim(),description:form.description||"",category:form.category||"Research",handler,input_label:form.input_label||"Enter query",credit_cost:0,price_inr:queryPrice,enabled:form.enabled===undefined?!editingToolId:form.enabled==="true",config};
     }
     else if(section==="plans") payload={name:form.name||"",description:form.description||"",price_inr:Number(form.price||0),credits:Number(form.credits||0),duration_days:Number(form.duration||30),is_active:true};
     else if(section==="announcements") payload={title:form.name||"",body:form.description||"",active:form.enabled==="true",is_published:form.enabled==="true",created_by:authUser?.id};
