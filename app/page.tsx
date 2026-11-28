@@ -182,12 +182,12 @@ export default function HomePage() {
   async function runTool() {
     if(!userEmail){setError("Please login or register before using research tools.");setAuthMode("login");setPage("Login");return;}
     setBusy(true); setError(""); setResult(null);
+    let walletChargeId="";
     try {
       const configuredTool=dbTools.find(item=>item.slug===tool);
       const configuredApi=String(configuredTool?.config?.api_url||"").trim();
       let data: unknown;
       let creditsHandledByProxy=false;
-      let walletChargeId="";
       // Custom HTTPS APIs are charged atomically by their server proxy. Built-in tools
       // are charged here through the same admin-priced Supabase catalogue.
       if(!(configuredTool && configuredApi)){
