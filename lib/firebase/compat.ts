@@ -7,8 +7,8 @@ import {
   updateProfile, GoogleAuthProvider, GithubAuthProvider, signInWithPopup, signInWithRedirect
 } from "firebase/auth";
 import {
-  collection, doc, getDoc, getDocs, addDoc, setDoc, updateDoc, deleteDoc,
-  query as fsQuery, where, orderBy, limit as fsLimit, onSnapshot
+  collection, doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc,
+  query as fsQuery, where, limit as fsLimit, onSnapshot
 } from "firebase/firestore";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 
@@ -69,21 +69,43 @@ async function applySignupRewards(user: any) {
     await fetch("/api/firebase/signup", { method: "POST", headers: { Authorization: "Bearer " + token } });
   } catch {}
 }
+// Admin panel: make sure the Firebase `admin` custom claim matches the Firestore profile role
+// (and bootstrap ADMIN_EMAIL) before the panel checks it. Only runs on /admin, once per account.
+const adminSyncs = new Map<string, Promise<void>>();
+function syncAdminClaim(user: any): Promise<void> {
+  if (typeof window === "undefined" || !window.location.pathname.startsWith("/admin")) return Promise.resolve();
+  let job = adminSyncs.get(user.uid);
+  if (!job) {
+    job = (async () => {
+      try {
+        const token = await user.getIdToken();
+        const r = await fetch("/api/admin/session", { method: "POST", headers: { Authorization: "Bearer " + token } });
+        const j = await r.json().catch(() => ({}));
+        if (j.refreshed) await user.getIdToken(true);
+      } catch {}
+    })();
+    adminSyncs.set(user.uid, job);
+  }
+  return job;
+}
 const authUser = (user: any) => user ? ({
   id: user.uid, uid: user.uid, email: user.email, email_confirmed_at: user.emailVerified ? new Date().toISOString() : null,
   user_metadata: { name: user.displayName || "" }, getIdToken: () => user.getIdToken(), getIdTokenResult: () => user.getIdTokenResult()
 }) : null;
 
 class QueryBuilder {
-  table: string; filters: any[] = []; sort: any[] = []; max = 0; action = "select";
-  payload: AnyRow | AnyRow[] = {}; columns = "*"; opts: any = {};
+  table: string; filters: any[] = []; sortSpec: { field: string; dir: "asc" | "desc" }[] = []; max = 0; action = "select";
+  payload: AnyRow | AnyRow[] = {}; columns = "*"; opts: any = {}; idEq = "";
   constructor(table: string) { this.table = table; }
   select(columns = "*", opts: any = {}) { this.columns = columns; this.opts = opts; return this; }
-  eq(field: string, value: any) { this.filters.push(where(field, "==", value)); return this; }
+  // eq("id", x) reads the document by its id, so it works even if the stored doc has no `id` field.
+  eq(field: string, value: any) { if (field === "id") this.idEq = String(value); else this.filters.push(where(field, "==", value)); return this; }
   neq(field: string, value: any) { this.filters.push(where(field, "!=", value)); return this; }
   in(field: string, values: any[]) { this.filters.push(where(field, "in", values)); return this; }
   ilike(field: string, value: string) { this.filters.push({ field, value: value.replaceAll("%", "").toLowerCase(), ilike: true }); return this; }
-  order(field: string, options: any = {}) { this.sort.push(orderBy(field, options.ascending === false ? "desc" : "asc")); return this; }
+  // Sorting is done in the browser so documents that lack the sort field are not silently dropped
+  // and no composite Firestore index is required.
+  order(field: string, options: any = {}) { this.sortSpec.push({ field, dir: options.ascending === false ? "desc" : "asc" }); return this; }
   limit(value: number) { this.max = value; return this; }
   insert(value: AnyRow | AnyRow[]) { this.action = "insert"; this.payload = value; return this; }
   upsert(value: AnyRow | AnyRow[], _options?: any) { this.action = "upsert"; this.payload = value; return this; }
@@ -93,20 +115,44 @@ class QueryBuilder {
     if (!firestore || !firebaseAuth?.currentUser) return { data: null, error: { message: "Firebase is not configured or you are signed out." } };
     try {
       const col = collection(firestore, this.table);
-      const q = fsQuery(col, ...this.filters.filter(x => !x.ilike), ...this.sort, ...(this.max ? [fsLimit(this.max)] : []));
       if (this.action === "insert" || this.action === "upsert") {
         const rows = Array.isArray(this.payload) ? this.payload : [this.payload];
         const output = [];
         for (const row of rows) {
           const id = String(row.id || (this.table === "profiles" ? firebaseAuth.currentUser.uid : row.key || crypto.randomUUID()));
-          await setDoc(doc(firestore, this.table, id), { ...row, id }, { merge: this.action === "upsert" });
-          output.push({ ...row, id });
+          const stamped = this.action === "insert" && row.created_at === undefined ? { created_at: new Date().toISOString(), ...row } : row;
+          await setDoc(doc(firestore, this.table, id), { ...stamped, id }, { merge: this.action === "upsert" });
+          output.push({ ...stamped, id });
         }
         return { data: Array.isArray(this.payload) ? output : output[0], error: null };
       }
-      let snapshot = await getDocs(q);
-      let docs = snapshot.docs.map(d => ({ id: d.id, ...d.data() } as AnyRow));
+      const serverFilters = this.filters.filter(x => !x.ilike);
+      const hasIlike = this.filters.some(x => x.ilike);
+      const clientPage = this.sortSpec.length > 0 || hasIlike;
+      let docs: AnyRow[];
+      if (this.idEq && serverFilters.length === 0) {
+        const one = await getDoc(doc(firestore, this.table, this.idEq));
+        docs = one.exists() ? [{ id: one.id, ...one.data() } as AnyRow] : [];
+      } else {
+        const q = fsQuery(col, ...serverFilters, ...(!clientPage && this.max ? [fsLimit(this.max)] : []));
+        const snapshot = await getDocs(q);
+        docs = snapshot.docs.map(d => ({ id: d.id, ...d.data() } as AnyRow));
+        if (this.idEq) docs = docs.filter(row => String(row.id) === this.idEq);
+      }
       for (const filter of this.filters.filter(x => x.ilike)) docs = docs.filter(row => String(row[filter.field] || "").toLowerCase().includes(filter.value));
+      if (this.sortSpec.length) docs.sort((a, b) => {
+        for (const s of this.sortSpec) {
+          const av = a[s.field], bv = b[s.field];
+          if (av == null && bv == null) continue;
+          if (av == null) return 1;
+          if (bv == null) return -1;
+          if (av === bv) continue;
+          const c = av > bv ? 1 : -1;
+          return s.dir === "asc" ? c : -c;
+        }
+        return 0;
+      });
+      if (clientPage && this.max) docs = docs.slice(0, this.max);
       if (this.action === "select") {
         if (this.opts.head) return { data: null, count: docs.length, error: null };
         if (this.columns !== "*") {
@@ -134,7 +180,11 @@ export function createClient(_url?: string, _key?: string) {
   const client: any = {
     from: (table: string) => new QueryBuilder(table),
     auth: {
-      getUser: async () => ({ data: { user: authUser(firebaseAuth?.currentUser) }, error: null }),
+      getUser: async () => {
+        const u = firebaseAuth?.currentUser;
+        if (u) await syncAdminClaim(u);
+        return { data: { user: authUser(u) }, error: null };
+      },
       getSession: async () => {
         // currentUser is null until Firebase restores the persisted session; wait for it once.
         if (firebaseAuth) await firebaseAuth.authStateReady();
@@ -147,7 +197,7 @@ export function createClient(_url?: string, _key?: string) {
         }) : () => {};
         return { data: { subscription: { unsubscribe } } };
       },
-      signOut: async () => { try { if (firebaseAuth) await signOut(firebaseAuth); return { error: null }; } catch (e) { return { error: err(e) }; } },
+      signOut: async () => { try { adminSyncs.clear(); if (firebaseAuth) await signOut(firebaseAuth); return { error: null }; } catch (e) { return { error: err(e) }; } },
       signInWithPassword: async ({ email, password }: any) => {
         try {
           if (!firebaseAuth) throw new Error("Firebase is not configured.");
