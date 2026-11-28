@@ -84,6 +84,15 @@ export default function AdminPage() {
   const [adminProfileSaving,setAdminProfileSaving]=useState(false);
   const [redeemDraft,setRedeemDraft]=useState({code:"",credits:"25",maxUses:"10"});
   const [redeemSaving,setRedeemSaving]=useState(false);
+  const [otpPending,setOtpPending]=useState(false);
+  const [otpChallenge,setOtpChallenge]=useState("");
+  const [otpCode,setOtpCode]=useState("");
+  const [securityBotToken,setSecurityBotToken]=useState("");
+  const [securityChatId,setSecurityChatId]=useState("");
+  const [securityEnabled,setSecurityEnabled]=useState(false);
+  const [securityBotConfigured,setSecurityBotConfigured]=useState(false);
+  const [securitySaving,setSecuritySaving]=useState(false);
+  const [securityMessage,setSecurityMessage]=useState("");
 
   const verify=useCallback(async()=>{
     if(!backend){setChecking(false);return;}
@@ -108,11 +117,33 @@ export default function AdminPage() {
           profile?.email?.toLowerCase()===user.email.toLowerCase());
         const sameAuthUser=profile?.id===user.id;
         const tokenResult=await user.getIdTokenResult?.();
-        const allowed=(sameAuthUser || verifiedEmailMatch) &&
+        const identityAllowed=(sameAuthUser || verifiedEmailMatch) &&
           profile?.role==="admin" && profile?.status==="active" && tokenResult?.claims.admin===true;
+        let allowed=identityAllowed;
+        if(identityAllowed){
+          try{
+            const token=await user.getIdToken?.();
+            const response=await fetch("/api/admin/2fa",{headers:token?{Authorization:"Bearer "+token}:{}});
+            const security=await response.json().catch(()=>({}));
+            if(!response.ok)throw new Error(security.error||"Could not verify admin security status.");
+            setSecurityEnabled(Boolean(security.enabled));
+            setSecurityBotConfigured(Boolean(security.botConfigured));
+            allowed=!security.enabled||Boolean(security.verified);
+            if(security.enabled&&!security.verified){
+              setIsAdmin(false);
+              setOtpPending(true);
+              if(!otpChallenge){
+                const start=await fetch("/api/admin/2fa",{method:"POST",headers:{"Content-Type":"application/json",...(token?{Authorization:"Bearer "+token}:{})},body:JSON.stringify({action:"start"})});
+                const startBody=await start.json().catch(()=>({}));
+                if(start.ok&&startBody.required){setOtpChallenge(String(startBody.challengeId||""));setMessage("Telegram par OTP bhej diya gaya hai. 5 minute ke andar code verify karein.");}
+                else if(!start.ok)setMessage(startBody.error||"Telegram OTP send nahi ho saka.");
+              }else setMessage("Telegram OTP enter karke Admin Panel unlock karein.");
+            }else{setOtpPending(false);setOtpChallenge("");setOtpCode("");}
+          }catch(error){allowed=false;setMessage(error instanceof Error?error.message:"Admin security check failed.");}
+        }
         setIsAdmin(allowed);
-        if(!allowed) setMessage("Signed in as "+(user.email||"an account")+", but this Auth identity is not linked to an active admin profile. Sign in with the email/password account or link its OAuth identity in Firebase.");
-        else setMessage("");
+        if(!identityAllowed) setMessage("Signed in as "+(user.email||"an account")+", but this Auth identity is not linked to an active admin profile. Sign in with the email/password account or link its OAuth identity in Firebase.");
+        else if(allowed) setMessage("");
       }
     } else setIsAdmin(false);
     setChecking(false);
@@ -210,7 +241,7 @@ export default function AdminPage() {
     setMessage("");
     const {error}=await backend.auth.signInWithPassword({email,password});
     if(error)setMessage(error.message);
-    else await verify();
+    else {setOtpPending(false);setOtpChallenge("");setOtpCode("");await verify();}
   }
   async function oauthLogin(provider:"google"|"github"){
     if(!backend){setMessage("Firebase is not configured.");return;}
@@ -226,6 +257,33 @@ export default function AdminPage() {
     if(error)setMessage(error.message);
   }
   async function logout(){if(backend)await backend.auth.signOut();setAuthUser(null);setIsAdmin(false);setMessage("");}
+  async function verifyTelegramOtp(){
+    if(!backend||!authUser?.getIdToken||!otpChallenge)return;
+    setSecuritySaving(true);setMessage("");
+    try{
+      const token=await authUser.getIdToken();
+      const response=await fetch("/api/admin/2fa",{method:"POST",headers:{"Content-Type":"application/json",Authorization:"Bearer "+token},body:JSON.stringify({action:"verify",challengeId:otpChallenge,otp:otpCode})});
+      const body=await response.json().catch(()=>({}));
+      if(!response.ok)throw new Error(body.error||"OTP verification failed.");
+      setOtpPending(false);setOtpChallenge("");setOtpCode("");
+      setMessage("Telegram verification successful. Admin session is valid for 24 hours.");
+      await verify();
+    }catch(error){setMessage(error instanceof Error?error.message:"OTP verification failed.");}
+    finally{setSecuritySaving(false);}
+  }
+  async function saveTelegramSecurity(){
+    if(!backend||!authUser?.getIdToken)return;
+    setSecuritySaving(true);setSecurityMessage("");
+    try{
+      const token=await authUser.getIdToken();
+      const response=await fetch("/api/admin/2fa",{method:"POST",headers:{"Content-Type":"application/json",Authorization:"Bearer "+token},body:JSON.stringify({action:"settings",botToken:securityBotToken.trim(),chatId:securityChatId.trim(),enabled:securityEnabled})});
+      const body=await response.json().catch(()=>({}));
+      if(!response.ok)throw new Error(body.error||"Could not save Telegram security settings.");
+      setSecurityBotToken("");setSecurityChatId("");setSecurityBotConfigured(Boolean(body.botConfigured&&body.chatConfigured));
+      setSecurityMessage(securityEnabled?"Telegram OTP security enabled. Next admin login will require OTP.":"Telegram OTP security disabled.");
+    }catch(error){setSecurityMessage(error instanceof Error?error.message:"Could not save settings.");}
+    finally{setSecuritySaving(false);}
+  }
   async function saveAdminProfile(){
     if(!backend||!authUser)return;
     const display_name=adminProfileDraft.display_name.trim();
@@ -456,7 +514,8 @@ export default function AdminPage() {
 
   if(checking)return <div className="admin-loading"><div className="admin-spinner"/>Checking admin access…</div>;
   if(!backend)return <div className="admin-auth"><div className="admin-auth-card"><div className="admin-logo"><Shield size={30}/></div><h1>Cyber<span>X</span> OSINT</h1><p>Admin panel configuration required</p><div className="admin-warning">Add NEXT_PUBLIC_FIREBASE_* settings in your hosting environment, then redeploy.</div><a href="https://github.com/Xcyberking/CyberOsintIndia" target="_blank" rel="noreferrer">Open project repository <ArrowRight size={15}/></a></div></div>;
-  if(!authUser||!isAdmin)return <div className="admin-auth"><div className="admin-auth-card"><div className="admin-logo"><Shield size={30}/></div><h1>Cyber<span>X</span> OSINT</h1><p>{authUser?"This account does not have active admin access.":"Secure administrator sign in"}</p>{!authUser&&<><label>Email address</label><input value={email} onChange={e=>setEmail(e.target.value)} type="email" placeholder="admin@example.com"/><label>Password</label><input value={password} onChange={e=>setPassword(e.target.value)} type="password" placeholder="Your password"/><button className="admin-primary" onClick={login}><LockKeyhole size={16}/> Admin Login</button><div className="admin-oauth-divider"><span>OR CONTINUE WITH</span></div><div className="admin-oauth-grid"><button type="button" onClick={()=>void oauthLogin("google")}><Chrome size={16}/> Google</button><button type="button" onClick={()=>void oauthLogin("github")}><Github size={16}/> GitHub</button></div></>}{message&&<div className="admin-message">{message}</div>}{authUser&&!isAdmin&&<button className="admin-primary" onClick={()=>void logout()}><LogOut size={16}/> Sign out / switch account</button>}<div className="admin-auth-note">OAuth login is real Firebase Auth. Only an account whose database profile has role=admin and status=active can enter this panel.</div></div></div>;
+  if(!authUser||!isAdmin)return <div className="admin-auth"><div className="admin-auth-card"><div className="admin-logo"><Shield size={30}/></div><h1>Cyber<span>X</span> OSINT</h1><p>{authUser?"This account does not have active admin access.":"Secure administrator sign in"}</p>{!authUser&&<><label>Email address</label><input value={email} onChange={e=>setEmail(e.target.value)} type="email" placeholder="admin@example.com"/><label>Password</label><input value={password} onChange={e=>setPassword(e.target.value)} type="password" placeholder="Your password"/><button className="admin-primary" onClick={login}><LockKeyhole size={16}/> Admin Login</button><div className="admin-oauth-divider"><span>OR CONTINUE WITH</span></div><div className="admin-oauth-grid"><button type="button" onClick={()=>void oauthLogin("google")}><Chrome size={16}/> Google</button><button type="button" onClick={()=>void oauthLogin("github")}><Github size={16}/> GitHub</button></div></>}
+      {otpPending&&authUser&&!isAdmin&&<div style={{marginTop:18,padding:16,border:"1px solid #bfdbfe",borderRadius:14,background:"#eff6ff"}}><b>Telegram OTP Verification</b><p className="admin-auth-note">A six-digit code was sent to the configured Admin Telegram chat. It expires in 5 minutes.</p><label>6-digit OTP</label><input value={otpCode} onChange={e=>setOtpCode(e.target.value.replace(/\D/g,"").slice(0,6))} inputMode="numeric" autoComplete="one-time-code" placeholder="000000" maxLength={6}/><button className="admin-primary" disabled={securitySaving||otpCode.length!==6} onClick={()=>void verifyTelegramOtp()}><ShieldCheck size={16}/>{securitySaving?"Verifying…":"Verify OTP"}</button></div>}{message&&<div className="admin-message">{message}</div>}{authUser&&!isAdmin&&<button className="admin-primary" onClick={()=>void logout()}><LogOut size={16}/> Sign out / switch account</button>}<div className="admin-auth-note">OAuth login is real Firebase Auth. Only an account whose database profile has role=admin and status=active can enter this panel.</div></div></div>;
 
   const navGroups=[
     {title:"OVERVIEW",keys:["dashboard","analytics"] as SectionKey[]},
@@ -501,6 +560,17 @@ export default function AdminPage() {
       {section==="analytics"&&<div className="admin-stat-grid">{Object.entries(counts).map(([key,value])=><div className="admin-stat" key={key}><div><small>{key.replaceAll("_"," ")}</small><b>{value.toLocaleString()}</b></div><span><Activity size={21}/></span></div>)}</div>}
       {section==="backup"&&<div className="admin-panel"><h3><Database size={18}/> Backup & Restore</h3><div className="admin-warning">Database backups are controlled by your Firebase project and plan. This page does not claim to create a backup from the browser.</div><ol className="admin-steps"><li>Open your Firebase project dashboard.</li><li>Use Database backups / Point-in-Time Recovery if enabled on your plan.</li><li>Before restoring, verify the target project and the backup timestamp.</li><li>After restore, run the app build and verify Auth, RLS and table access.</li></ol><a className="admin-primary-link" href="https://backend.com/dashboard/projects" target="_blank" rel="noreferrer">Open Firebase dashboard <ArrowRight size={15}/></a></div>}
       {section==="about"&&<div className="admin-panel"><div className="admin-about-logo"><Shield size={42}/></div><h2>CyberX OSINT</h2><p>Public-source research workspace with an Android-first interface and database-protected administration.</p><div className="admin-warning">Safety scope: public technical metadata and public links only. No private-person tracking, account intrusion, password discovery, leaked personal-data search, or precise location claims.</div><a href="https://github.com/Xcyberking/CyberOsintIndia" target="_blank" rel="noreferrer">Repository <ArrowRight size={15}/></a></div>}
+      {section==="settings"&&<section className="admin-panel" style={{marginBottom:18}}>
+        <div className="admin-panel-head"><div><h3><ShieldCheck size={18}/> Telegram Admin Two-Step Verification</h3><small>Send a one-time code to your Telegram bot after every new admin login. Verified sessions last 24 hours.</small></div><span className="admin-tag">{securityEnabled?"OTP enabled":"OTP disabled"}</span></div>
+        <div className="admin-form-grid" style={{marginTop:14}}>
+          <label>Telegram Bot Token<input type="password" value={securityBotToken} onChange={e=>setSecurityBotToken(e.target.value)} placeholder={securityBotConfigured?"Saved securely — enter only to replace":"Paste bot token"} autoComplete="new-password"/></label>
+          <label>Admin Telegram Chat ID<input value={securityChatId} onChange={e=>setSecurityChatId(e.target.value)} placeholder={securityBotConfigured?"Saved — enter only to replace":"Your numeric Telegram chat ID"}/></label>
+        </div>
+        <label style={{display:"flex",alignItems:"center",gap:9,marginTop:14}}><input type="checkbox" checked={securityEnabled} onChange={e=>setSecurityEnabled(e.target.checked)}/> Enable Telegram OTP on admin login</label>
+        <div className="admin-form-foot"><button className="admin-primary" disabled={securitySaving} onClick={()=>void saveTelegramSecurity()}><Save size={15}/>{securitySaving?"Saving…":"Save Telegram security"}</button></div>
+        {securityMessage&&<div className="admin-message" style={{marginTop:12}}>{securityMessage}</div>}
+        <p className="admin-hint">The bot token is stored server-side and is never sent back to the browser. Do not share it in chat. Start the Telegram bot once before enabling OTP.</p>
+      </section>}
       {section==="settings"&&<section className="admin-panel" style={{marginBottom:18}}>
         <div className="admin-panel-head"><div><h3><CreditCard size={18}/> Manual UPI / QR Payments</h3><small>Razorpay is not used. Admin approval is required for every wallet deposit.</small></div><span className="admin-tag">Manual verification</span></div>
         <div style={{marginTop:14}}><label className="admin-form-label">Upload payment QR (PNG/JPG/WebP, max 2 MB)</label><input type="file" accept="image/png,image/jpeg,image/webp" disabled={qrUploading} onChange={e=>{const file=e.target.files?.[0];if(file)void uploadPaymentQr(file);}}/><small className="admin-hint">{qrUploading?"Uploading QR image… Please keep this page open.":"After upload, check the preview below and then press Save payment settings to publish it."}</small>{qrUploading&&<div style={{height:6,background:"#dbeafe",borderRadius:99,overflow:"hidden",marginTop:10}}><div style={{height:"100%",width:"35%",background:"#2563eb",borderRadius:99,animation:"adminQrUpload 1.2s ease-in-out infinite alternate"}}/></div>}{paymentQrDraft&&<div style={{marginTop:14,padding:12,border:"1px solid #86efac",borderRadius:12,background:"#f0fdf4"}}><div style={{display:"flex",alignItems:"center",gap:7,color:"#166534",fontWeight:700,fontSize:13,marginBottom:10}}><CheckCircle2 size={16}/> QR uploaded — preview ready</div><img src={paymentQrDraft} alt="Uploaded payment QR preview" style={{display:"block",width:"min(100%,280px)",maxHeight:280,objectFit:"contain",background:"#fff",borderRadius:10,border:"1px solid #e5e7eb",padding:8}}/><small style={{display:"block",marginTop:8,color:"#166534"}}>This QR will appear on the user Wallet page after you save payment settings.</small></div>}</div>
