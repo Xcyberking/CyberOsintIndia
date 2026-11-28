@@ -28,4 +28,4 @@ Public users can read enabled tools and approved public payment settings. Privat
 
 ## Existing data
 
-The Supabase `CyberOsintIndia` project already contained the tools and site settings tables. The migration added `price_inr`, exposed the UPI setting to public Store reads, and created the public `cyberx-site-media` bucket. Previously seeded built-in tools are disabled so the administrator can decide which ones to enable. The admin panel imports any non-duplicate legacy Firestore tools once after admin login.
+The Supabase `CyberOsintIndia` project already contained the tools and site settings tables. The migration added `price_inr`, exposed the UPI setting to public Store reads, and created the public `cyberx-site-media` bucket. All existing tools are disabled by default, so the public catalogue starts empty; the administrator can enable a suitable existing entry or create a new tool. The admin panel imports any non-duplicate legacy Firestore tools once after admin login.
