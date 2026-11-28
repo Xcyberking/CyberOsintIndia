@@ -187,6 +187,20 @@ export default function HomePage() {
       const configuredApi=String(configuredTool?.config?.api_url||"").trim();
       let data: unknown;
       let creditsHandledByProxy=false;
+      let walletChargeId="";
+      // Custom HTTPS APIs are charged atomically by their server proxy. Built-in tools
+      // are charged here through the same admin-priced Supabase catalogue.
+      if(!(configuredTool && configuredApi)){
+        if(!backend)throw new Error("Firebase Authentication is unavailable.");
+        const {data:{user}}=await backend.auth.getUser();
+        if(!user?.getIdToken)throw new Error("Please sign in again.");
+        const token=await user.getIdToken();
+        const chargeResponse=await fetch("/api/tools/charge",{method:"POST",headers:{"Content-Type":"application/json",Authorization:"Bearer "+token},body:JSON.stringify({slug:toolSlug[tool]||tool})});
+        const chargeBody=await chargeResponse.json().catch(()=>({}));
+        if(!chargeResponse.ok)throw new Error(chargeBody.error||"Wallet charge failed.");
+        walletChargeId=String(chargeBody.chargeId||"");
+        if(typeof chargeBody.remaining_wallet==="number")setWalletBalance(chargeBody.remaining_wallet);
+      }
       // Run administrator-defined APIs on the server so browser CORS does not block results.
       if(configuredTool && configuredApi){
         if(!backend)throw new Error("Firebase Authentication is unavailable.");
@@ -285,9 +299,11 @@ export default function HomePage() {
           note: "These are direct public profile links. No accounts are scraped and no match is claimed."
         };
       }
-      if(backend&&!creditsHandledByProxy){const {data:{user}}=await backend.auth.getUser();if(user){const slug=toolSlug[tool]||tool;const {data:remaining,error:creditError}=await backend.rpc("consume_tool_wallet",{p_tool_slug:slug});if(creditError)throw new Error(creditError.message);if(typeof remaining==="number")setWalletBalance(remaining);}}
       setResult(data); await addHistory(selectedTool.title, query.trim());
     } catch (e) {
+      if(walletChargeId&&backend){
+        try{const {data:{user}}=await backend.auth.getUser();const token=await user?.getIdToken?.();if(token){const r=await fetch("/api/tools/refund",{method:"POST",headers:{"Content-Type":"application/json",Authorization:"Bearer "+token},body:JSON.stringify({chargeId:walletChargeId})});const b=await r.json().catch(()=>({}));if(r.ok&&typeof b.remaining_wallet==="number")setWalletBalance(b.remaining_wallet);}}catch{}
+      }
       setError(e instanceof Error ? e.message : "Something went wrong.");
     } finally { setBusy(false); }
   }
@@ -596,7 +612,7 @@ export default function HomePage() {
 
       {page === "All Tools" && <>
         <div className="content-panel" style={{maxWidth:"none",marginBottom:16}}><div style={{display:"flex",alignItems:"center",gap:10}}><Search color="#0872f9"/><div><strong style={{fontSize:14}}>Find a research tool</strong><div className="notice" style={{margin:0}}>Choose a public-source utility below.</div></div></div></div>
-        <div className="tool-list">{visibleTools.map((item)=>{const Icon=item.icon;return <button className="tool-row" key={item.key} onClick={()=>goTool(item.key)}><div className="tool-icon"><Icon size={20}/></div><span><strong>{item.title}</strong><small>{item.description}</small></span><ChevronRight size={18}/></button>})}</div>
+        <div className="tool-list">{visibleTools.map((item)=>{const Icon=item.icon;return <button className="tool-row" key={item.key} onClick={()=>goTool(item.key)}><div className="tool-icon"><Icon size={20}/></div><span><strong>{item.title}</strong><small>{item.description}</small><small style={{color:"#0872f9",fontWeight:700}}>₹{Number(dbTools.find(t=>t.slug===toolSlug[item.key]||t.slug===item.key)?.price_inr||0).toFixed(2)} / query</small></span><ChevronRight size={18}/></button>})}</div>
         <div className="notice">Only tools enabled by the administrator are shown. CyberX does not offer private-person tracking, account intrusion, password discovery, or leaked personal-data searches.</div>
       </>}
 
