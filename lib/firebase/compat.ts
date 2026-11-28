@@ -253,7 +253,7 @@ export function createClient(_url?: string, _key?: string) {
       }
     },
     storage: { from: (bucket: string) => ({
-      upload: async (path: string, file: File, options: any = {}) => { try { if (!firebaseStorage) throw new Error("Firebase Storage is not configured."); await uploadBytes(ref(firebaseStorage, bucket + "/" + path), file, { contentType: options.contentType || file.type }); return { error: null }; } catch (e) { return { error: err(e) }; } },
+      upload: async (path: string, file: File, options: any = {}) => { try { if (!firebaseStorage) throw new Error("Firebase Storage is not configured. Set NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET to the bucket from this Firebase project and redeploy."); await uploadBytes(ref(firebaseStorage, bucket + "/" + path), file, { contentType: options.contentType || file.type }); return { error: null }; } catch (e) { return { error: err(e) }; } },
       createSignedUrl: async (path: string) => { try { if (!firebaseStorage) throw new Error("Firebase Storage is not configured."); return { data: { signedUrl: await getDownloadURL(ref(firebaseStorage, bucket + "/" + path)) }, error: null }; } catch (e) { return { data: null, error: err(e) }; } }
     }) },
     rpc: async (name: string, args: AnyRow = {}) => {
