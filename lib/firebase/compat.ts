@@ -217,7 +217,20 @@ export function createClient(_url?: string, _key?: string) {
         }) : () => {};
         return { data: { subscription: { unsubscribe } } };
       },
-      signOut: async () => { try { adminSyncs.clear(); if (firebaseAuth) await signOut(firebaseAuth); return { error: null }; } catch (e) { return { error: err(e) }; } },
+      signOut: async () => {
+        try {
+          const current=firebaseAuth?.currentUser;
+          if(current){
+            try{
+              const token=await current.getIdToken();
+              await fetch("/api/admin/2fa",{method:"POST",headers:{"Content-Type":"application/json",Authorization:"Bearer "+token},body:JSON.stringify({action:"logout"})});
+            }catch{}
+          }
+          adminSyncs.clear();
+          if (firebaseAuth) await signOut(firebaseAuth);
+          return { error: null };
+        } catch (e) { return { error: err(e) }; }
+      },
       signInWithPassword: async ({ email, password }: any) => {
         try {
           if (!firebaseAuth) throw new Error("Firebase is not configured.");
