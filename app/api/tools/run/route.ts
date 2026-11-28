@@ -22,7 +22,8 @@ export async function POST(request: Request) {
     if (!profile.exists || profile.data()?.status !== "active") return NextResponse.json({ error: "Account is not active." }, { status: 403 });
     const tool = await getEnabledSupabaseTool(String(slug));
     if (!tool) return NextResponse.json({ error: "Tool unavailable." }, { status: 404 });
-    const template = String(tool.config?.api_url || "");
+    const config = tool.config && typeof tool.config === "object" ? tool.config as Record<string, unknown> : {};
+    const template = String(config.api_url || "");
     safeTemplate(template);
 
     // Charge first (admin-set price per query). If the upstream call fails the charge is refunded.
