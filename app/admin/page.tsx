@@ -39,6 +39,17 @@ const tableByKey: Partial<Record<SectionKey,string>> = {
   announcements:"announcements",api:"api_integrations",logs:"admin_audit_logs",developer:"developer_resources",support:"support_tickets"
 };
 const backend=createClient();
+const builtInTools=[
+  {slug:"username",key:"username-tracker",name:"Username Tracker",description:"Public profile links"},
+  {slug:"email",key:"email-validator",name:"Email Validator",description:"Email syntax and public mail-domain checks"},
+  {slug:"ip",key:"ip-lookup",name:"IP Lookup",description:"Approximate public IP metadata"},
+  {slug:"domain",key:"domain-lookup",name:"Domain Analyzer",description:"Public RDAP and nameserver information"},
+  {slug:"url",key:"url-safety",name:"Website Analyzer",description:"URL structure and HTTPS checks"},
+  {slug:"dns",key:"dns-lookup",name:"DNS Lookup",description:"Public DNS records"},
+  {slug:"image",key:"reverse-image-search",name:"Reverse Image Search",description:"Public reverse-image search links"},
+  {slug:"social",key:"social-media-analyzer",name:"Social Media Analyzer",description:"Public profile links"},
+  {slug:"breach",key:"breach-self-check",name:"Breach Self-Check",description:"Official self-check resources"}
+];
 
 function valueText(value: unknown): string {
   if (value===null||value===undefined) return "—";
@@ -70,6 +81,8 @@ export default function AdminPage() {
   const [gatewayMessage,setGatewayMessage]=useState("");
   const [qrUploading,setQrUploading]=useState(false);
   const [paymentInstructionsDraft,setPaymentInstructionsDraft]=useState("");
+  const [paymentUpiIdDraft,setPaymentUpiIdDraft]=useState("");
+  const [hiddenBuiltinTools,setHiddenBuiltinTools]=useState<string[]>([]);
   const [ticketReplies,setTicketReplies]=useState<Record<string,string>>({});
   const [bulkCreditDelta,setBulkCreditDelta]=useState("5");
   const [bulkCreditReason,setBulkCreditReason]=useState("Administrator bulk credit grant");
@@ -167,6 +180,16 @@ export default function AdminPage() {
       const map=Object.fromEntries((data||[]).map((row:{key:string;value:unknown})=>[row.key,row.value])) as Record<string,unknown>;
       const read=(key:string,fallback:number)=>{const raw=map[key] as {credits?:unknown}|undefined;const n=Number(raw?.credits??fallback);return Number.isSafeInteger(n)&&n>=0?n:fallback;};
       setReferralRewardForm({signup:String(read("default_signup_credits",3)),referred:String(read("referral_new_user_credits",7)),referrer:String(read("referral_reward",3))});
+    });
+    return ()=>{active=false;};
+  },[isAdmin]);
+  useEffect(()=>{
+    if(!backend||!isAdmin)return;
+    let active=true;
+    void backend.from("site_settings").select("value").eq("key","hidden_builtin_tools").maybeSingle().then(({data,error}:{data:{value?:unknown}|null;error:{message:string}|null})=>{
+      if(!active)return;
+      if(error){setMessage("Could not load built-in tool visibility: "+error.message);return;}
+      setHiddenBuiltinTools(Array.isArray(data?.value)?data.value.map(String):[]);
     });
     return ()=>{active=false;};
   },[isAdmin]);
@@ -371,11 +394,22 @@ export default function AdminPage() {
   async function saveManualPaymentSettings(){
     if(!backend)return;
     setGatewayMessage("");
+    const updated_at=new Date().toISOString();
     const values=[
-      {key:"payment_instructions",value:paymentInstructionsDraft,updated_by:authUser?.id,updated_at:new Date().toISOString()}
+      {key:"payment_instructions",value:paymentInstructionsDraft.trim(),updated_by:authUser?.id,updated_at},
+      {key:"payment_upi_id",value:paymentUpiIdDraft.trim(),updated_by:authUser?.id,updated_at}
     ];
     const {error}=await backend.from("site_settings").upsert(values,{onConflict:"key"});
-    setGatewayMessage(error?error.message:"Manual payment instructions saved.");
+    setGatewayMessage(error?error.message:"UPI ID and payment instructions saved.");
+  }
+
+  async function toggleBuiltinTool(slug:string,hidden:boolean){
+    if(!backend||!authUser)return;
+    const next=hidden?Array.from(new Set([...hiddenBuiltinTools,slug])):hiddenBuiltinTools.filter(item=>item!==slug);
+    const {error}=await backend.from("site_settings").upsert({key:"hidden_builtin_tools",value:next,updated_by:authUser.id,updated_at:new Date().toISOString()},{onConflict:"key"});
+    if(error){setMessage("Could not update built-in tool: "+error.message);return;}
+    setHiddenBuiltinTools(next);
+    setMessage(hidden?"Built-in tool hidden from users.":"Built-in tool restored for users.");
   }
 
   async function uploadPaymentQr(file:File){
@@ -399,7 +433,9 @@ export default function AdminPage() {
   useEffect(()=>{
     if(section!=="settings")return;
     const saved=rows.find(row=>row.key==="payment_instructions");
+    const upi=rows.find(row=>row.key==="payment_upi_id");
     if(saved)setPaymentInstructionsDraft(String(saved.value??"").replace(/^"|"$/g,""));
+    if(upi)setPaymentUpiIdDraft(String(upi.value??"").replace(/^"|"$/g,""));
   },[section,rows]);
   const recordCount=Object.values(counts).reduce((a,b)=>a+b,0);
   const addable=["tools","plans","announcements","settings"].includes(section);
@@ -421,7 +457,10 @@ export default function AdminPage() {
     if(section==="redeem")return <div className="admin-records">{filtered.map(row=><div className="admin-record" key={String(row.code||row.id)}><div className="admin-record-icon"><Ticket size={18}/></div><div className="admin-record-main"><strong className="mono">{valueText(row.code||row.id)}</strong><small>{valueText(row.credits)} credits · {valueText(row.used_count||0)} / {valueText(row.max_uses)} uses · {row.active===false?"Inactive":"Active"}</small><small>Created: {dateText(row.created_at)}</small></div>{row.active!==false&&<button className="admin-small" onClick={()=>void deactivateRedeemCode(String(row.code||row.id))}>Deactivate</button>}<span className="admin-tag">{row.active===false?"Inactive":"Active"}</span></div>)}</div>;
     if(section==="credits")return <div className="admin-table-wrap"><table><thead><tr><th>Email</th><th>Username</th><th>Current credits</th><th>Action</th></tr></thead><tbody>{filtered.map(row=><tr key={String(row.id)}><td>{valueText(row.email)}</td><td>{valueText(row.username||row.display_name||"—")}</td><td><strong>{valueText(row.credits)}</strong></td><td><button className="admin-small" disabled={Number(row.credits||0)===0} onClick={()=>void clearUserCredits(row)}>Clear credits</button></td></tr>)}</tbody></table></div>;
     if(section==="users"||section==="banned")return <div className="admin-table-wrap"><table><thead><tr><th>User ID</th><th>Email / Username</th><th>Role</th><th>Status</th><th>Credits</th><th>Credit / plan actions</th></tr></thead><tbody>{filtered.map(row=><tr key={String(row.id)}><td className="mono">{String(row.id).slice(0,8)}…</td><td>{valueText(row.email)}<small>{valueText(row.username||row.display_name||"—")}</small></td><td><select value={userEdits[String(row.id)]?.role||valueText(row.role)} onChange={e=>setUserEdits(v=>({...v,[String(row.id)]:{role:e.target.value,status:v[String(row.id)]?.status||valueText(row.status),delta:v[String(row.id)]?.delta||"0",reason:v[String(row.id)]?.reason||"Admin adjustment"}}))}><option value="user">User</option><option value="moderator">Moderator</option><option value="admin">Admin</option></select></td><td><select value={userEdits[String(row.id)]?.status||valueText(row.status)} onChange={e=>setUserEdits(v=>({...v,[String(row.id)]:{role:v[String(row.id)]?.role||valueText(row.role),status:e.target.value,delta:v[String(row.id)]?.delta||"0",reason:v[String(row.id)]?.reason||"Admin adjustment"}}))}><option value="active">Active</option><option value="suspended">Suspended</option><option value="banned">Banned</option></select></td><td>{valueText(row.credits)}</td><td><div className="admin-inline"><input aria-label="Credit adjustment" placeholder="+/- credits" value={userEdits[String(row.id)]?.delta||"0"} onChange={e=>setUserEdits(v=>({...v,[String(row.id)]:{role:v[String(row.id)]?.role||valueText(row.role),status:v[String(row.id)]?.status||valueText(row.status),delta:e.target.value,reason:v[String(row.id)]?.reason||"Admin adjustment"}}))}/><button className="admin-small" onClick={()=>updateUser(String(row.id))}>Save user</button><select value={planEdits[String(row.id)]||""} onChange={e=>setPlanEdits(v=>({...v,[String(row.id)]:e.target.value}))}><option value="">Assign plan…</option>{adminPlans.map(plan=><option key={plan.id} value={plan.id}>{plan.name} · {plan.credits} credits</option>)}</select><button className="admin-small" disabled={!planEdits[String(row.id)]} onClick={()=>void assignPlanToUser(String(row.id))}>Give plan</button></div></td></tr>)}</tbody></table></div>;
-    if(section==="tools")return <div className="admin-records">{filtered.map(row=>{const cfg=(row.config&&typeof row.config==="object"?row.config:{}) as Record<string,string>;return <div className="admin-record" key={String(row.id)}><div className="admin-record-icon"><Wrench size={18}/></div><div className="admin-record-main"><strong>{valueText(row.name)}</strong><small>{valueText(row.description)} · ₹{Number(row.price_inr||0).toFixed(2)} per successful query</small><small className="mono">{cfg.api_url||"No API URL configured"}</small></div><label className="admin-switch"><input type="checkbox" checked={Boolean(row.enabled)} onChange={e=>toggleTool(String(row.id),e.target.checked)}/><span/></label><button className="admin-small" onClick={()=>void editTool(row)}>Edit</button><button className="admin-small" onClick={()=>void deleteTool(String(row.id))}>Delete</button></div>})}</div>;
+    if(section==="tools")return <div className="admin-records">
+      {builtInTools.filter(item=>JSON.stringify(item).toLowerCase().includes(search.toLowerCase())).map(item=>{const hidden=hiddenBuiltinTools.includes(item.key);return <div className="admin-record" key={item.key}><div className="admin-record-icon"><Wrench size={18}/></div><div className="admin-record-main"><strong>{item.name} <span className="admin-tag">Built-in</span></strong><small>{item.description} · Original tool</small></div><button className="admin-small" onClick={()=>void toggleBuiltinTool(item.key,!hidden)}>{hidden?"Restore":"Hide"}</button><span className="admin-tag">{hidden?"Hidden":"Visible"}</span></div>;})}
+      {filtered.map(row=>{const cfg=(row.config&&typeof row.config==="object"?row.config:{}) as Record<string,string>;return <div className="admin-record" key={String(row.id)}><div className="admin-record-icon"><Wrench size={18}/></div><div className="admin-record-main"><strong>{valueText(row.name)}</strong><small>{valueText(row.description)} · ₹{Number(row.price_inr||0).toFixed(2)} per successful query</small><small className="mono">{cfg.api_url||"No API URL configured"}</small></div><label className="admin-switch"><input type="checkbox" checked={Boolean(row.enabled)} onChange={e=>toggleTool(String(row.id),e.target.checked)}/><span/></label><button className="admin-small" onClick={()=>void editTool(row)}>Edit</button><button className="admin-small" onClick={()=>void deleteTool(String(row.id))}>Delete</button></div>})}
+    </div>;
     if(section==="announcements")return <div className="admin-records">{filtered.map(row=><div className="admin-record" key={String(row.id)}><div className="admin-record-icon"><Megaphone size={18}/></div><div className="admin-record-main"><strong>{valueText(row.title)}</strong><small>{valueText(row.body)}</small></div><button className="admin-small" onClick={()=>publishAnnouncement(String(row.id),!Boolean(row.is_published))}>{row.is_published?"Unpublish":"Publish"}</button></div>)}</div>;
     if(section==="plans")return <div className="admin-records">{filtered.map(row=><div className="admin-record" key={String(row.id)}><div className="admin-record-icon"><Crown size={18}/></div><div className="admin-record-main"><strong>{valueText(row.name)} · ₹{valueText(row.price_inr)}</strong><small>{valueText(row.credits)} credits · {valueText(row.duration_days)} days · {valueText(row.description)}</small></div><label className="admin-switch"><input type="checkbox" checked={Boolean(row.is_active)} onChange={e=>updateRow("premium_plans",String(row.id),{is_active:e.target.checked},"Plan status updated.")}/><span/></label></div>)}</div>;
     if(section==="payments")return <div className="admin-records">{filtered.map(row=><div className="admin-record" key={String(row.id)}><div className="admin-record-icon"><CreditCard size={18}/></div><div className="admin-record-main"><strong>₹{valueText(row.amount_inr)} · {valueText(row.provider)} · {valueText(row.status)}</strong><small>User: {String(row.user_id||"").slice(0,12)}… · Plan: {valueText(row.user_note||row.plan_id)}</small><small>UTR / reference: {valueText(row.provider_reference)} · {dateText(row.created_at)}</small>{Boolean(row.proof_url)&&<button className="admin-small" onClick={()=>void openPaymentProof(String(row.proof_url))}>Open private payment proof</button>}{Boolean(row.admin_note)&&<small>Admin note: {valueText(row.admin_note)}</small>}</div>{row.status==="pending"?<div className="admin-inline"><button className="admin-small" onClick={async()=>{if(!window.confirm("Confirm you checked the payment in the bank/UPI statement and received the money?"))return;const {error}=await backend!.rpc("admin_review_payment",{p_payment_id:String(row.id),p_approve:true,p_admin_note:null});setMessage(error?error.message:(row.payment_type==="wallet"?"Wallet deposit approved and balance updated.":"Payment approved; plan and credits applied."));if(!error){await loadRows();await loadCounts();}}}>Approve</button><button className="admin-small" onClick={async()=>{const note=window.prompt("Reason for rejection (optional):")||"";const {error}=await backend!.rpc("admin_review_payment",{p_payment_id:String(row.id),p_approve:false,p_admin_note:note});setMessage(error?error.message:"Payment rejected.");if(!error)await loadRows();}}>Reject</button></div>:<span className="admin-tag">{valueText(row.status)}</span>}</div>)}</div>;
@@ -452,7 +491,8 @@ export default function AdminPage() {
       {section==="settings"&&<section className="admin-panel" style={{marginBottom:18}}>
         <div className="admin-panel-head"><div><h3><CreditCard size={18}/> Manual UPI / QR Payments</h3><small>Razorpay is not used. Admin approval is required for every wallet deposit.</small></div><span className="admin-tag">Manual verification</span></div>
         <div style={{marginTop:14}}><label className="admin-form-label">Upload payment QR (PNG/JPG/WebP, max 2 MB)</label><input type="file" accept="image/png,image/jpeg,image/webp" onChange={e=>{const file=e.target.files?.[0];if(file)void uploadPaymentQr(file);}}/><small className="admin-hint">This QR is shown to users in the Wallet page. Use a payment account authorized to receive these payments.</small></div>
-        <div style={{marginTop:14}}><label className="admin-form-label">Payment instructions shown to users</label><textarea rows={4} value={paymentInstructionsDraft} onChange={e=>setPaymentInstructionsDraft(e.target.value)} placeholder="Enter UPI name, payment instructions, and expected steps…"/></div>
+        <div style={{marginTop:14}}><label className="admin-form-label">UPI ID shown to users</label><input type="text" value={paymentUpiIdDraft} onChange={e=>setPaymentUpiIdDraft(e.target.value)} placeholder="yourname@upi" autoComplete="off"/></div>
+        <div style={{marginTop:14}}><label className="admin-form-label">Payment instructions shown to users</label><textarea rows={4} value={paymentInstructionsDraft} onChange={e=>setPaymentInstructionsDraft(e.target.value)} placeholder="Enter payment instructions and expected steps…"/></div>
         <div className="admin-form-foot"><button className="admin-primary" disabled={qrUploading} onClick={()=>void saveManualPaymentSettings()}>Save payment instructions</button></div>
         {gatewayMessage&&<div className="admin-message" style={{marginTop:12}}>{gatewayMessage}</div>}
       </section>}
