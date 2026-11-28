@@ -295,7 +295,7 @@ export default function AdminPage() {
       } else {
         delete config.api_url;
       }
-      payload={slug:String(current?.slug||(form.name||"").toLowerCase().trim().replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,"")),name:form.name||"",description:form.description||"",category:form.category||"Research",handler,input_label:form.input_label||"Enter query",credit_cost:0,price_inr:queryPrice,enabled:form.enabled==="true",config};
+      payload={slug:String(current?.slug||(form.name||"").toLowerCase().trim().replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,"")),name:form.name||"",description:form.description||"",category:form.category||"Research",handler,input_label:form.input_label||"Enter query",credit_cost:0,price_inr:queryPrice,enabled:form.enabled===undefined?!editingToolId:form.enabled==="true",config};
     }
     else if(section==="plans") payload={name:form.name||"",description:form.description||"",price_inr:Number(form.price||0),credits:Number(form.credits||0),duration_days:Number(form.duration||30),is_active:true};
     else if(section==="announcements") payload={title:form.name||"",body:form.description||"",active:form.enabled==="true",is_published:form.enabled==="true",created_by:authUser?.id};
