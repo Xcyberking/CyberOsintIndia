@@ -52,14 +52,15 @@ export default function HomePage() {
   const [authBusy, setAuthBusy] = useState(false);
   const [mobileMenu, setMobileMenu] = useState(false);
   const [enabledToolSlugs, setEnabledToolSlugs] = useState<string[]>(["username-tracker","email-validator","ip-lookup","domain-lookup","url-safety","dns-lookup","reverse-image-search","social-media-analyzer","breach-self-check"]);
-  const [dbTools,setDbTools]=useState<{slug:string;name:string;description:string;category:string;enabled:boolean;handler:string;credit_cost:number;price_inr:number;input_label:string;result_note:string;config?:Record<string,unknown>}[]>([]);
+  const [dbTools,setDbTools]=useState<{slug:string;name:string;description:string;category:string;enabled:boolean;handler:string;credit_cost:number;price_inr:number;input_label:string;result_note:string;created_at?:string;config?:Record<string,unknown>}[]>([]);
+  const [hiddenBuiltinToolSlugs,setHiddenBuiltinToolSlugs]=useState<string[]>([]);
   const [username,setUsername]=useState(""); const [avatarUrl,setAvatarUrl]=useState("");
   const [credits,setCredits]=useState(0); const [planName,setPlanName]=useState("Free"); const [planExpires,setPlanExpires]=useState("");
   const [referralCode,setReferralCode]=useState(""); const [referralCount,setReferralCount]=useState(0); const [referralCredits,setReferralCredits]=useState(0);
   const [referralRewards,setReferralRewards]=useState({signup:3,referred:7,referrer:3});
   const [referralShareMessage,setReferralShareMessage]=useState("");
   const [plans,setPlans]=useState<{id:string;name:string;description:string;price_inr:number;credits:number;duration_days:number}[]>([]);
-  const [paymentQr,setPaymentQr]=useState(""); const [paymentInstructions,setPaymentInstructions]=useState("");
+  const [paymentQr,setPaymentQr]=useState(""); const [paymentInstructions,setPaymentInstructions]=useState(""); const [paymentUpiId,setPaymentUpiId]=useState("");
   const [walletBalance,setWalletBalance]=useState(0);
   const [depositAmount,setDepositAmount]=useState("100");
   const [selectedPlan,setSelectedPlan]=useState(""); const [paymentReference,setPaymentReference]=useState(""); const [paymentProof,setPaymentProof]=useState<File|null>(null);
@@ -73,11 +74,17 @@ export default function HomePage() {
 
   const toolSlug: Record<ToolKey,string> = { username:"username-tracker", email:"email-validator", ip:"ip-lookup", domain:"domain-lookup", url:"url-safety", dns:"dns-lookup", image:"reverse-image-search", social:"social-media-analyzer", breach:"breach-self-check" };
   const iconFor=(name:string)=>({Globe:Globe2,Globe2,Search,Compass:Compass,Mail,Wifi,Network,Shield:ShieldCheck,Image:ImageIcon,Users,User:UserRoundSearch,Database,Link:Link2,Wrench}[name]||Wrench);
-  const visibleTools:ToolInfo[] = dbTools.length ? dbTools.filter(item=>item.enabled).map(item=>{
+  const enabledDbTools=dbTools.filter(item=>item.enabled);
+  const databaseToolCards:ToolInfo[]=enabledDbTools.map(item=>{
     const built=tools.find(t=>toolSlug[t.key]===item.slug);
     return built?{...built,title:item.name||built.title,description:item.description||built.description,category:item.category||built.category}
       :{key:item.slug,title:item.name,description:item.description,category:item.category,icon:iconFor(String(item.config?.icon||"Wrench"))};
-  }):tools.filter(item=>enabledToolSlugs.includes(toolSlug[item.key]));
+  });
+  const databaseSlugs=new Set(enabledDbTools.map(item=>item.slug));
+  const builtinCards=tools.filter(item=>!hiddenBuiltinToolSlugs.includes(item.key)&&!databaseSlugs.has(toolSlug[item.key]));
+  // Admin-added database tools are already ordered newest-first by created_at.
+  // Keep them before built-ins without hiding the original catalogue.
+  const visibleTools:ToolInfo[]=[...databaseToolCards,...builtinCards];
   const selectedTool = useMemo(() => visibleTools.find(item=>item.key===tool)||tools.find(item=>item.key===tool)||{key:tool,title:dbTools.find(x=>x.slug===tool)?.name||tool,description:dbTools.find(x=>x.slug===tool)?.description||"Custom administrator tool",icon:Wrench,category:"Custom"},[tool,visibleTools,dbTools]);
 
   async function hydrateUser(user: { id: string; email?: string | null; user_metadata?: Record<string, unknown> }) {
@@ -111,9 +118,9 @@ export default function HomePage() {
     if (!backend) { setAuthMessage("Firebase is not configured. Add the six NEXT_PUBLIC_FIREBASE_* values in your hosting settings."); setPage("Login"); return; }
     let active = true;
     void Promise.all([
-      backend.from("tools").select("slug,name,description,category,enabled,handler,credit_cost,price_inr,input_label,result_note,config").eq("enabled",true),
+      backend.from("tools").select("slug,name,description,category,enabled,handler,credit_cost,price_inr,input_label,result_note,created_at,config").eq("enabled",true).order("created_at",{ascending:false}),
       backend.from("premium_plans").select("id,name,description,price_inr,credits,duration_days").eq("is_active",true).order("price_inr"),
-      backend.from("site_settings").select("key,value").in("key",["payment_qr_url","payment_instructions","default_signup_credits","referral_new_user_credits","referral_reward"])
+      backend.from("site_settings").select("key,value").in("key",["payment_qr_url","payment_instructions","payment_upi_id","hidden_builtin_tools","default_signup_credits","referral_new_user_credits","referral_reward"])
     ]).then(([t,p,s])=>{
       if(!active)return;
       if(t.data){const toolRows=t.data as typeof dbTools;setDbTools(toolRows);setEnabledToolSlugs(toolRows.filter((row)=>row.enabled).map((row)=>row.slug));}
@@ -121,6 +128,8 @@ export default function HomePage() {
       const settings=Object.fromEntries((s.data||[]).map((row:{key:string;value:unknown})=>[row.key,row.value]));
       setPaymentQr(String(settings.payment_qr_url||"").replace(/^"|"$/g,""));
       setPaymentInstructions(String(settings.payment_instructions||"").replace(/^"|"$/g,""));
+      setPaymentUpiId(String(settings.payment_upi_id||"").replace(/^"|"$/g,""));
+      setHiddenBuiltinToolSlugs(Array.isArray(settings.hidden_builtin_tools)?settings.hidden_builtin_tools.map(String):[]);
       const rewardCredits=(value:unknown,fallback:number)=>{const raw=value&&typeof value==="object"?(value as {credits?:unknown}).credits:value;const n=Number(raw);return Number.isSafeInteger(n)&&n>=0?n:fallback;};
       setReferralRewards({signup:rewardCredits(settings.default_signup_credits,3),referred:rewardCredits(settings.referral_new_user_credits,7),referrer:rewardCredits(settings.referral_reward,3)});
     });
@@ -628,6 +637,7 @@ export default function HomePage() {
       {page === "Store" && <div className="content-panel" style={{maxWidth:"none"}}>
         <div className="section-head" style={{marginTop:0}}><h3><Store size={18} style={{verticalAlign:"middle",marginRight:8}}/>Wallet & Deposits</h3><strong>Balance: ₹{walletBalance.toFixed(2)}</strong></div>
         {paymentQr&&<div style={{textAlign:"center",padding:16,background:"#fff",borderRadius:18,marginBottom:16}}><img src={paymentQr} alt="Admin payment QR" style={{width:220,maxWidth:"100%",height:"auto",objectFit:"contain"}}/><p style={{color:"#123",fontWeight:700}}>Scan to pay</p></div>}
+        {paymentUpiId&&<div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,padding:14,border:"1px solid #cfe2fb",borderRadius:12,background:"#f7faff",marginBottom:12}}><div><small style={{display:"block",color:"#647794"}}>UPI ID</small><strong style={{color:"#123",overflowWrap:"anywhere"}}>{paymentUpiId}</strong></div><button className="secondary-btn" type="button" onClick={()=>{void navigator.clipboard?.writeText(paymentUpiId);setStoreMessage("UPI ID copied.");}}> <Copy size={15}/> Copy</button></div>}
         {paymentInstructions&&<p className="notice">{paymentInstructions}</p>}
         <div style={{padding:16,border:"1px solid #cfe2fb",borderRadius:14,background:"#f7faff",marginBottom:16}}>
           <div className="section-head" style={{marginTop:0}}><h3><Gift size={18} style={{verticalAlign:"middle",marginRight:7}}/>Redeem a code</h3><strong>{credits} credits</strong></div>
