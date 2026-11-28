@@ -81,6 +81,7 @@ export default function AdminPage() {
   const [gatewayMessage,setGatewayMessage]=useState("");
   const [qrUploading,setQrUploading]=useState(false);
   const [paymentSettingsSaving,setPaymentSettingsSaving]=useState(false);
+  const [paymentQrDraft,setPaymentQrDraft]=useState("");
   const [paymentInstructionsDraft,setPaymentInstructionsDraft]=useState("");
   const [paymentUpiIdDraft,setPaymentUpiIdDraft]=useState("");
   const [hiddenBuiltinTools,setHiddenBuiltinTools]=useState<string[]>([]);
@@ -400,10 +401,11 @@ export default function AdminPage() {
       const updated_at=new Date().toISOString();
       const values=[
         {key:"payment_instructions",value:paymentInstructionsDraft.trim(),updated_by:authUser?.id,updated_at},
-        {key:"payment_upi_id",value:paymentUpiIdDraft.trim(),updated_by:authUser?.id,updated_at}
+        {key:"payment_upi_id",value:paymentUpiIdDraft.trim(),updated_by:authUser?.id,updated_at},
+        ...(paymentQrDraft?[{key:"payment_qr_url",value:paymentQrDraft,updated_by:authUser?.id,updated_at}]:[])
       ];
       const {error}=await backend.from("site_settings").upsert(values,{onConflict:"key"});
-      setGatewayMessage(error?"Could not save payment settings: "+error.message:"UPI ID and payment instructions saved.");
+      setGatewayMessage(error?"Could not save payment settings: "+error.message:"Payment settings saved. The QR and UPI details are now visible on the user Wallet page.");
       if(!error)await loadRows();
     }catch(error){setGatewayMessage("Could not save payment settings: "+(error instanceof Error?error.message:"Unexpected error."));}
     finally{setPaymentSettingsSaving(false);}
@@ -421,7 +423,8 @@ export default function AdminPage() {
   async function uploadPaymentQr(file:File){
     if(!backend||!authUser||!isAdmin){setGatewayMessage("Verified administrator access is required to upload site images.");return;}
     if(!["image/png","image/jpeg","image/webp"].includes(file.type)||file.size>=2*1024*1024){setGatewayMessage("Choose a PNG, JPG or WebP image smaller than 2 MB.");return;}
-    setQrUploading(true);setGatewayMessage("Uploading QR image…");
+    setPaymentQrDraft("");
+    setQrUploading(true);setGatewayMessage("Uploading QR image. Please wait…");
     try{
       const safeName=file.name.replace(/[^a-zA-Z0-9._-]/g,"").slice(-80)||"payment-qr.png";
       const path="payment-qr/"+Date.now()+"-"+crypto.randomUUID()+"-"+safeName;
@@ -429,11 +432,8 @@ export default function AdminPage() {
       if(uploadError)throw new Error("Image upload failed: "+uploadError.message);
       const {data,error:urlError}=await backend.storage.from("cyberx-site-media").createSignedUrl(path,31536000);
       if(urlError||!data?.signedUrl)throw new Error("Image uploaded, but its download URL could not be created: "+(urlError?.message||"Unknown storage error."));
-      const {error:saveError}=await backend.from("site_settings").upsert({key:"payment_qr_url",value:data.signedUrl,updated_by:authUser.id,updated_at:new Date().toISOString()},{onConflict:"key"});
-      if(saveError)throw new Error("Image uploaded, but saving the site setting failed: "+saveError.message);
-      setGatewayMessage("Payment QR image saved and published to the Store.");
-      // Refresh is helpful but must not leave the upload state stuck if it fails.
-      try{await loadRows();}catch{ /* QR setting is already saved. */ }
+      setPaymentQrDraft(data.signedUrl);
+      setGatewayMessage("QR uploaded successfully. Preview is ready. Tap “Save payment settings” to publish it to users.");
     }catch(error){
       setGatewayMessage(error instanceof Error?error.message:"QR upload failed. Please try again.");
     }finally{
@@ -446,8 +446,10 @@ export default function AdminPage() {
     if(section!=="settings")return;
     const saved=rows.find(row=>row.key==="payment_instructions");
     const upi=rows.find(row=>row.key==="payment_upi_id");
+    const qr=rows.find(row=>row.key==="payment_qr_url");
     if(saved)setPaymentInstructionsDraft(String(saved.value??"").replace(/^"|"$/g,""));
     if(upi)setPaymentUpiIdDraft(String(upi.value??"").replace(/^"|"$/g,""));
+    if(qr&&!paymentQrDraft)setPaymentQrDraft(String(qr.value??"").replace(/^"|"$/g,""));
   },[section,rows]);
   const recordCount=Object.values(counts).reduce((a,b)=>a+b,0);
   const addable=["tools","plans","announcements","settings"].includes(section);
@@ -502,10 +504,10 @@ export default function AdminPage() {
       {section==="about"&&<div className="admin-panel"><div className="admin-about-logo"><Shield size={42}/></div><h2>CyberX OSINT</h2><p>Public-source research workspace with an Android-first interface and database-protected administration.</p><div className="admin-warning">Safety scope: public technical metadata and public links only. No private-person tracking, account intrusion, password discovery, leaked personal-data search, or precise location claims.</div><a href="https://github.com/Xcyberking/CyberOsintIndia" target="_blank" rel="noreferrer">Repository <ArrowRight size={15}/></a></div>}
       {section==="settings"&&<section className="admin-panel" style={{marginBottom:18}}>
         <div className="admin-panel-head"><div><h3><CreditCard size={18}/> Manual UPI / QR Payments</h3><small>Razorpay is not used. Admin approval is required for every wallet deposit.</small></div><span className="admin-tag">Manual verification</span></div>
-        <div style={{marginTop:14}}><label className="admin-form-label">Upload payment QR (PNG/JPG/WebP, max 2 MB)</label><input type="file" accept="image/png,image/jpeg,image/webp" onChange={e=>{const file=e.target.files?.[0];if(file)void uploadPaymentQr(file);}}/><small className="admin-hint">This QR is shown to users in the Wallet page. Use a payment account authorized to receive these payments. {qrUploading?"Uploading QR…":"Uploading a QR does not disable the Save payment settings button."}</small></div>
+        <div style={{marginTop:14}}><label className="admin-form-label">Upload payment QR (PNG/JPG/WebP, max 2 MB)</label><input type="file" accept="image/png,image/jpeg,image/webp" disabled={qrUploading} onChange={e=>{const file=e.target.files?.[0];if(file)void uploadPaymentQr(file);}}/><small className="admin-hint">{qrUploading?"Uploading QR image… Please keep this page open.":"After upload, check the preview below and then press Save payment settings to publish it."}</small>{qrUploading&&<div style={{height:6,background:"#dbeafe",borderRadius:99,overflow:"hidden",marginTop:10}}><div style={{height:"100%",width:"35%",background:"#2563eb",borderRadius:99,animation:"adminQrUpload 1.2s ease-in-out infinite alternate"}}/></div>}{paymentQrDraft&&<div style={{marginTop:14,padding:12,border:"1px solid #86efac",borderRadius:12,background:"#f0fdf4"}}><div style={{display:"flex",alignItems:"center",gap:7,color:"#166534",fontWeight:700,fontSize:13,marginBottom:10}}><CheckCircle2 size={16}/> QR uploaded — preview ready</div><img src={paymentQrDraft} alt="Uploaded payment QR preview" style={{display:"block",width:"min(100%,280px)",maxHeight:280,objectFit:"contain",background:"#fff",borderRadius:10,border:"1px solid #e5e7eb",padding:8}}/><small style={{display:"block",marginTop:8,color:"#166534"}}>This QR will appear on the user Wallet page after you save payment settings.</small></div>}</div>
         <div style={{marginTop:14}}><label className="admin-form-label">UPI ID shown to users</label><input type="text" value={paymentUpiIdDraft} onChange={e=>setPaymentUpiIdDraft(e.target.value)} placeholder="yourname@upi" autoComplete="off"/></div>
         <div style={{marginTop:14}}><label className="admin-form-label">Payment instructions shown to users</label><textarea rows={4} value={paymentInstructionsDraft} onChange={e=>setPaymentInstructionsDraft(e.target.value)} placeholder="Enter payment instructions and expected steps…"/></div>
-        <div className="admin-form-foot"><button className="admin-primary" type="button" disabled={paymentSettingsSaving} onClick={()=>void saveManualPaymentSettings()}><Save size={15}/>{paymentSettingsSaving?"Saving…":"Save payment settings"}</button></div>
+        <div className="admin-form-foot"><button className="admin-primary" type="button" disabled={paymentSettingsSaving||qrUploading} onClick={()=>void saveManualPaymentSettings()}><Save size={15}/>{paymentSettingsSaving?"Saving…":qrUploading?"Wait for QR upload…":"Save payment settings"}</button></div>
         {gatewayMessage&&<div className="admin-message" style={{marginTop:12}}>{gatewayMessage}</div>}
       </section>}
       {section==="redeem"&&<section className="admin-panel" style={{marginBottom:18}}>
