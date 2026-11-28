@@ -81,7 +81,7 @@ export default function HomePage() {
       :{key:item.slug,title:item.name,description:item.description,category:item.category,icon:iconFor(String(item.config?.icon||"Wrench"))};
   });
   const databaseSlugs=new Set(enabledDbTools.map(item=>item.slug));
-  const builtinCards=tools.filter(item=>!hiddenBuiltinToolSlugs.includes(item.key)&&!databaseSlugs.has(toolSlug[item.key]));
+  const builtinCards=tools.filter(item=>!hiddenBuiltinToolSlugs.includes(toolSlug[item.key])&&!databaseSlugs.has(toolSlug[item.key]));
   // Admin-added database tools are already ordered newest-first by created_at.
   // Keep them before built-ins without hiding the original catalogue.
   const visibleTools:ToolInfo[]=[...databaseToolCards,...builtinCards];
