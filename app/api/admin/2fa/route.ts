@@ -62,7 +62,9 @@ export async function POST(request:Request){
       if(enabled&&!(botToken||settings.botToken))throw new Error("Telegram bot token is required.");
       if(enabled&&!(chatId||settings.chatId))throw new Error("Admin Telegram chat ID is required.");
       await settingsRef.set({botToken:botToken||settings.botToken||"",chatId:chatId||settings.chatId||"",enabled,updatedAt:Date.now(),updatedBy:decoded.uid},{merge:true});
-      return NextResponse.json({ok:true,enabled,botConfigured:Boolean(botToken||settings.botToken),chatConfigured:Boolean(chatId||settings.chatId)});
+      const response=NextResponse.json({ok:true,enabled,botConfigured:Boolean(botToken||settings.botToken),chatConfigured:Boolean(chatId||settings.chatId)});
+      if(enabled&&!await currentSession(request,decoded.uid)){const issued=await issueSession(decoded.uid);setCookie(response,issued.token);}
+      return response;
     }
     if(body.action==="start"){
       if(settings.enabled!==true){
