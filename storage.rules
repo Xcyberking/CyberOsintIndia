@@ -9,11 +9,15 @@ service firebase.storage {
         && request.resource.size < 5 * 1024 * 1024
         && request.resource.contentType.matches('image/(jpeg|png|webp)');
     }
+    // Payment QR and public site images must be readable by all visitors.
+    // Only a verified Firebase admin can upload, replace, or delete these files.
     match /cyberx-site-media/{allPaths=**} {
-      allow read: if signedIn();
-      allow write: if admin()
+      allow read: if true;
+      allow create, update: if admin()
+        && request.resource != null
         && request.resource.size <= 2 * 1024 * 1024
         && request.resource.contentType.matches('image/(jpeg|png|webp)');
+      allow delete: if admin();
     }
     match /cyberx-user-media/{uid}/{fileName} {
       allow read: if admin() || (signedIn() && request.auth.uid == uid);
