@@ -1,4 +1,5 @@
 import "server-only";
+import { createHash } from "node:crypto";
 import { cert, getApps, initializeApp } from "firebase-admin/app";
 import { getAuth } from "firebase-admin/auth";
 import { getFirestore } from "firebase-admin/firestore";
@@ -27,5 +28,14 @@ export async function verifyBearer(request: Request) {
 export async function requireAdmin(request: Request) {
   const decoded = await verifyBearer(request);
   if (decoded.admin !== true) throw new Error("Administrator permission required.");
+  const settings = await adminDb().collection("admin_security").doc("settings").get();
+  if (settings.data()?.enabled === true) {
+    const token = request.headers.get("cookie")?.split(";").map(v => v.trim()).find(v => v.startsWith("cx_admin_verified="))?.slice("cx_admin_verified=".length);
+    if (!token) throw new Error("Telegram OTP verification required.");
+    const key = createHash("sha256").update(token).digest("hex");
+    const session = await adminDb().collection("admin_2fa_sessions").doc(key).get();
+    const data = session.data();
+    if (!session.exists || data?.uid !== decoded.uid || Number(data.expiresAt) <= Date.now()) throw new Error("Admin verification expired. Login and verify Telegram OTP again.");
+  }
   return decoded;
 }
