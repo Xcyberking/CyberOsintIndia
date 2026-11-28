@@ -1,12 +1,14 @@
 import { NextResponse } from "next/server";
 import { adminDb, verifyBearer } from "@/lib/firebase/admin";
+import { r2 } from "@/lib/firebase/wallet";
 import type { DocumentReference } from "firebase-admin/firestore";
 export const runtime = "nodejs";
 
+// Rewards are wallet rupees (INR). Defaults are 0 until the admin sets them in Referral Reward Settings.
 function reward(value: unknown, fallback: number) {
   const raw = value && typeof value === "object" ? (value as {credits?:unknown}).credits : value;
   const n = Number(raw);
-  return Number.isSafeInteger(n) && n >= 0 && n <= 100000 ? n : fallback;
+  return Number.isFinite(n) && n >= 0 && n <= 100000 ? r2(n) : fallback;
 }
 export async function POST(request: Request) {
   try {
@@ -21,10 +23,10 @@ export async function POST(request: Request) {
       db.collection("site_settings").doc("referral_new_user_credits").get(),
       db.collection("site_settings").doc("referral_reward").get()
     ]);
-    const signupCredits = reward(settings[0].data()?.value, 3);
-    const referredCredits = reward(settings[1].data()?.value, 7);
-    const referrerCredits = reward(settings[2].data()?.value, 3);
-    const referralCode = String(profileSnap.data()?.pending_referral_code || "") .trim();
+    const signupAmount = reward(settings[0].data()?.value, 0);
+    const referredAmount = reward(settings[1].data()?.value, 0);
+    const referrerAmount = reward(settings[2].data()?.value, 0);
+    const referralCode = String(profileSnap.data()?.pending_referral_code || "").trim();
     let referrerRef: DocumentReference | null = null;
     if (referralCode) {
       const match = await db.collection("profiles").where("referral_code","==",referralCode).limit(1).get();
@@ -36,16 +38,26 @@ export async function POST(request: Request) {
       const referrer = referrerRef ? await tx.get(referrerRef) : null;
       const hasReferrer = Boolean(referrer?.exists && referrerRef);
       const now = new Date().toISOString();
-      const referredBonus = hasReferrer ? referredCredits : 0;
-      tx.update(profileRef, { credits: Number(fresh.data()?.credits || 0) + signupCredits + referredBonus, signup_processed: true, pending_referral_code: null, updated_at: now });
-      const signupLedger = db.collection("credit_transactions").doc();
-      tx.set(signupLedger,{user_id:decoded.uid,delta:signupCredits,reason:"Signup reward",created_at:now});
+      const total = r2(signupAmount + (hasReferrer ? referredAmount : 0));
+      const balance = r2(Number(fresh.data()?.wallet_balance || 0) + total);
+      tx.update(profileRef, { wallet_balance: balance, signup_processed: true, pending_referral_code: null, updated_at: now });
+      if (total > 0) {
+        const l1 = db.collection("credit_transactions").doc();
+        tx.set(l1,{user_id:decoded.uid,delta:total,reason:"Signup reward",created_at:now});
+        const w1 = db.collection("wallet_transactions").doc();
+        tx.set(w1,{id:w1.id,user_id:decoded.uid,amount_inr:total,balance_after:balance,transaction_type:"bonus",description:"Signup reward",created_at:now});
+      }
       if (hasReferrer && referrerRef && referrer) {
-        tx.update(referrerRef,{credits:Number(referrer.data()?.credits||0)+referrerCredits,updated_at:now});
-        const referrerLedger = db.collection("credit_transactions").doc();
-        tx.set(referrerLedger,{user_id:referrerRef.id,delta:referrerCredits,reason:"Referral reward",created_at:now});
+        if (referrerAmount > 0) {
+          const rb = r2(Number(referrer.data()?.wallet_balance || 0) + referrerAmount);
+          tx.update(referrerRef,{wallet_balance:rb,updated_at:now});
+          const l2 = db.collection("credit_transactions").doc();
+          tx.set(l2,{user_id:referrerRef.id,delta:referrerAmount,reason:"Referral reward",created_at:now});
+          const w2 = db.collection("wallet_transactions").doc();
+          tx.set(w2,{id:w2.id,user_id:referrerRef.id,amount_inr:referrerAmount,balance_after:rb,transaction_type:"bonus",description:"Referral reward",created_at:now});
+        }
         const claim = db.collection("referral_claims").doc();
-        tx.set(claim,{id:claim.id,referrer_id:referrerRef.id,referred_id:decoded.uid,reward:referrerCredits,status:"qualified",created_at:now});
+        tx.set(claim,{id:claim.id,referrer_id:referrerRef.id,referred_id:decoded.uid,reward:referrerAmount,status:"qualified",created_at:now});
       }
     });
     return NextResponse.json({ok:true});
